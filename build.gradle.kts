@@ -26,7 +26,8 @@ dependencies {
     // Fabric Language Kotlin
     modImplementation("net.fabricmc:fabric-language-kotlin:1.13.11+kotlin.2.3.21")
 
-    // Kotlin stdlib 已由 fabric-language-kotlin 通过 JiJ 捆绑，无需重复声明
+    // Gson for config
+    include(implementation("com.google.code.gson:gson:2.10.1")!!)
 }
 
 tasks {
