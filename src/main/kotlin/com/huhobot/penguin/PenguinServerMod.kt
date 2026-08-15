@@ -116,8 +116,43 @@ object PenguinServerMod : ModInitializer {
     fun formatGameMessage(name: String, message: String): String =
         config.chatFromGame.replace("{name}", name).replace("{message}", message)
 
-    fun formatGroupMessage(name: String, message: String): String =
-        config.chatFromGroup.replace("{name}", name).replace("{message}", message)
+    fun formatGroupMessage(name: String, msg: com.huhobot.penguin.qq.GroupMessage): String {
+        var content = msg.content
+
+        // 处理附件（图片、语音等）：content 为空但有 attachments
+        if (content.isBlank() && !msg.attachments.isNullOrEmpty()) {
+            val attachment = msg.attachments.firstOrNull()
+            val contentType = attachment?.get("content_type") as? String
+
+            when {
+                contentType?.startsWith("image/") == true -> {
+                    content = "[图片]"
+                }
+                contentType == "voice" -> {
+                    val asrText = attachment?.get("asr_refer_text") as? String
+                    content = if (asrText.isNullOrBlank()) "[语音]" else "[语音：$asrText]"
+                }
+                contentType?.startsWith("video/") == true -> {
+                    content = "[视频]"
+                }
+                contentType == "file" -> {
+                    content = "[文件]"
+                }
+                else -> {
+                    content = "[附件]"
+                }
+            }
+        }
+
+        // 清理 QQ 消息中的格式化标签
+        val cleaned = content
+            .replace(Regex("<faceType=6,faceId=\"0\",ext=\"[^\"]+\">"), "[图片]")  // faceType=6 且 faceId=0 是真图片
+            .replace(Regex("<faceType=[^>]+>"), "[表情]")  // 其他 faceType 是表情
+            .replace(Regex("<[^>]+>"), "")  // 移除其他 XML 标签
+            .trim()
+
+        return config.chatFromGroup.replace("{name}", name).replace("{message}", cleaned)
+    }
 
     /** 广播文字到游戏内所有玩家（QQ → 游戏）。 */
     fun broadcastToGame(message: String) {

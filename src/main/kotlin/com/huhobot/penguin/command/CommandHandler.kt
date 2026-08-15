@@ -79,13 +79,23 @@ class CommandHandler(
         Cmd("发消息") { ctx ->
             if (ctx.params.isBlank()) { reply(ctx, "用法：发消息 <内容>"); return@Cmd }
             com.huhobot.penguin.filter.TextFilter.audit(ctx.params, cfg) { filtered ->
-                PenguinServerMod.broadcastToGame(PenguinServerMod.formatGroupMessage(displayName(ctx), filtered))
+                val tempMsg = com.huhobot.penguin.qq.GroupMessage(
+                    id = "", groupId = ctx.groupId, content = filtered,
+                    userId = ctx.userId, username = ctx.username, memberRole = ctx.memberRole,
+                    timestamp = null, attachments = null
+                )
+                PenguinServerMod.broadcastToGame(PenguinServerMod.formatGroupMessage(displayName(ctx), tempMsg))
             }
         },
         Cmd("发信息") { ctx ->
             if (ctx.params.isBlank()) { reply(ctx, "用法：发信息 <内容>"); return@Cmd }
             com.huhobot.penguin.filter.TextFilter.audit(ctx.params, cfg) { filtered ->
-                PenguinServerMod.broadcastToGame(PenguinServerMod.formatGroupMessage(displayName(ctx), filtered))
+                val tempMsg = com.huhobot.penguin.qq.GroupMessage(
+                    id = "", groupId = ctx.groupId, content = filtered,
+                    userId = ctx.userId, username = ctx.username, memberRole = ctx.memberRole,
+                    timestamp = null, attachments = null
+                )
+                PenguinServerMod.broadcastToGame(PenguinServerMod.formatGroupMessage(displayName(ctx), tempMsg))
             }
         },
         Cmd("查在线") { ctx ->
@@ -127,6 +137,37 @@ class CommandHandler(
         },
         Cmd("在线服务器") { ctx ->
             reply(ctx, "${cfg.botName} 在线")
+        },
+        Cmd("motd") { ctx ->
+            if (ctx.params.isBlank()) {
+                reply(ctx, "用法：motd <IP:端口>\n示例：motd mc.hypixel.net:25565")
+                return@Cmd
+            }
+
+            // 解析 IP:端口
+            val parts = ctx.params.split(":")
+            val ip = parts.getOrNull(0)?.trim() ?: run {
+                reply(ctx, "无效的地址格式")
+                return@Cmd
+            }
+            val port = parts.getOrNull(1)?.trim()?.toIntOrNull() ?: 25565
+
+            // 转换中文域名为 ASCII
+            val asciiIp = try {
+                java.net.IDN.toASCII(ip, java.net.IDN.ALLOW_UNASSIGNED)
+            } catch (_: Exception) {
+                ip
+            }
+
+            // 构建 MOTD 图片 URL
+            val timestampSeconds = System.currentTimeMillis() / 1000
+            val imgUrl = cfg.motdApi
+                .replace("{ip}", asciiIp)
+                .replace("{port}", port.toString()) + "&$timestampSeconds"
+
+            // 发送图片（不使用 Markdown，因为手机端显示不正常）
+            val text = "查询服务器：$ip:$port"
+            qqClient.sendGroupMessageWithImage(ctx.groupId, text, imgUrl, ctx.msgId)
         },
         Cmd("执行") { ctx ->
             val item = custom.resolveRun(ctx.params)
@@ -325,11 +366,13 @@ class CommandHandler(
 
         // 非命令消息：全量转发到游戏
         if (cfg.chatPostChat && state.isFullForwarding(message.groupId)) {
-            val raw = message.content.trim()
-            if (raw.isNotEmpty()) {
-                com.huhobot.penguin.filter.TextFilter.audit(raw, cfg) { filtered ->
+            // 创建临时消息对象用于格式化（包含 filtered 内容和原始 attachments）
+            val filteredMsg = message.copy(content = message.content.trim())
+            if (filteredMsg.content.isNotEmpty() || !filteredMsg.attachments.isNullOrEmpty()) {
+                com.huhobot.penguin.filter.TextFilter.audit(filteredMsg.content, cfg) { filtered ->
+                    val msgWithFiltered = filteredMsg.copy(content = filtered)
                     PenguinServerMod.broadcastToGame(
-                        PenguinServerMod.formatGroupMessage(displayName(ctx), filtered)
+                        PenguinServerMod.formatGroupMessage(displayName(ctx), msgWithFiltered)
                     )
                 }
             }
