@@ -113,11 +113,11 @@ class QQClient(private val cfg: PenguinConfig) {
 
     private fun doConnect() {
         val token = getAccessTokenSync()
-        logger.info("QQ 网关：正式环境 api.bot.qq.com")
+        if (cfg.debugLogEvents) logger.info("QQ 网关：正式环境 api.bot.qq.com")
 
         val gatewayUrl = fetchGatewayUrl(token)
         if (gatewayUrl.isNullOrBlank()) throw IllegalStateException("网关地址为空")
-        logger.info("网关地址：$gatewayUrl")
+        if (cfg.debugLogEvents) logger.info("网关地址：$gatewayUrl")
 
         reconnectAttempt = 0
         openSocket(gatewayUrl, token)
@@ -159,7 +159,7 @@ class QQClient(private val cfg: PenguinConfig) {
         }
 
         if (sessionId != null && !firstConnect) {
-            logger.info("尝试 Resume 已断开会话…")
+            if (cfg.debugLogEvents) logger.info("尝试 Resume 已断开会话…")
             conn.send("""{"op":$OP_RESUME,"d":{"token":"QQBot $token","session_id":"${sessionId}","seq":${lastSeq ?: "null"}}}""")
         } else {
             val platform = System.getProperty("os.name", "unknown")
@@ -248,7 +248,7 @@ class QQClient(private val cfg: PenguinConfig) {
             }
             "RESUMED" -> {
                 firstConnect = false
-                logger.info("Resume 成功，会话已恢复")
+                if (cfg.debugLogEvents) logger.info("Resume 成功，会话已恢复")
             }
             "GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE" -> {
                 val d = payload["d"] as? Map<*, *> ?: return
@@ -303,7 +303,7 @@ class QQClient(private val cfg: PenguinConfig) {
     }
 
     private fun refreshToken(): String {
-        logger.info("正在获取 access_token…")
+        if (cfg.debugLogEvents) logger.info("正在获取 access_token…")
         val body = """{"appId":"${cfg.botAppId}","clientSecret":"${cfg.botSecret}"}"""
         val resp = postJson("https://bots.qq.com/app/getAppAccessToken", body, emptyMap())
         val token = resp["access_token"] as? String
@@ -404,7 +404,7 @@ class QQClient(private val cfg: PenguinConfig) {
                     "Content-Type" to "application/json; charset=utf-8"
                 )
             )
-            logger.info("群富媒体消息已发送 group=$groupId")
+            if (cfg.debugLogEvents) logger.info("群富媒体消息已发送 group=$groupId")
         } catch (e: Exception) {
             logger.error("发送图片消息失败", e)
         }
@@ -415,18 +415,17 @@ class QQClient(private val cfg: PenguinConfig) {
      * 参考 SDK：https://github.com/HuHoBot/qqpd-bot-java FileMsg.java
      */
     private fun uploadImage(groupId: String, imgUrl: String): String? {
-        logger.info("开始上传图片：url=$imgUrl")
+        if (cfg.debugLogEvents) logger.info("开始上传图片：url=$imgUrl")
         val token = getAccessTokenSync()
         val id = java.net.URLEncoder.encode(groupId, "UTF-8")
 
-        // 上传请求体：file_type=1（图片），url=图片地址，srv_send_msg=false（不直接发送）
         val uploadBody = jsonStringify(mapOf(
             "file_type" to 1,
             "url" to imgUrl,
             "srv_send_msg" to false
         ))
 
-        logger.info("上传请求：$uploadBody")
+        if (cfg.debugLogEvents) logger.info("上传请求：$uploadBody")
         val resp = postJson(
             "https://api.bot.qq.com/v2/groups/$id/files",
             uploadBody,
@@ -437,10 +436,9 @@ class QQClient(private val cfg: PenguinConfig) {
             )
         )
 
-        logger.info("上传响应：$resp")
-        // 返回 file_info 字段
+        if (cfg.debugLogEvents) logger.info("上传响应：$resp")
         val fileInfo = resp["file_info"] as? String
-        logger.info("提取到 file_info=$fileInfo")
+        if (cfg.debugLogEvents) logger.info("提取到 file_info=$fileInfo")
         return fileInfo
     }
 
@@ -470,7 +468,7 @@ class QQClient(private val cfg: PenguinConfig) {
         if (stopped.get()) return
         val backoff = minOf(MAX_RECONNECT_DELAY, 1000L * (1L shl minOf(reconnectAttempt++, 5)))
         val wait = delay ?: (backoff + (Math.random() * 500).toLong())
-        logger.info("${wait}ms 后重连网关…")
+        if (cfg.debugLogEvents) logger.info("${wait}ms 后重连网关…")
         connectAsync(wait)
     }
 
