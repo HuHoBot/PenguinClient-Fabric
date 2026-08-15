@@ -6,8 +6,9 @@ HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，�
 
 ✅ **双向消息转发** - 游戏聊天转发到 QQ 群，QQ 群消息广播到游戏内  
 ✅ **进退服通知** - 玩家进服/退服自动推送到 QQ 群  
-✅ **20 个内置群命令** - 查在线、白名单管理、管理员管理等  
-✅ **MOTD 图片** - `/查在线` 支持发送服务器状态图片（Markdown 内嵌）  
+✅ **20+ 内置群命令** - 查在线、白名单管理、管理员管理、MOTD查询等  
+✅ **MOTD 查询** - `/motd <IP:端口>` 查询任意服务器状态，支持图片展示  
+✅ **全量模式优化** - 自动识别图片、语音、表情、视频等多媒体内容  
 ✅ **白名单自助绑定** - QQ 用户自助绑定游戏名并自动加入白名单  
 ✅ **管理员系统** - 支持 QQ 群管理员 / 手动管理员 / 双重模式  
 ✅ **敏感词过滤** - 正则过滤 + 词库过滤，可选 OpenAI 兼容二审  
@@ -18,11 +19,16 @@ HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，�
 
 ## 环境要求
 
-- **Minecraft**: 26.1+
-- **Java**: 25+（26.x 起 Minecraft 要求 Java 25）
-- **Fabric Loader**: 0.19.0+
-- **Fabric API**: 0.155.0+（对应 MC 版本）
-- **Fabric Language Kotlin**: 1.13.13+kotlin.2.4.10
+支持以下 Minecraft 版本：
+
+| Minecraft 版本 | JAR 文件 |
+|---|---|
+| 1.20.1 ~ 1.21.x | `penguin-server-fabric-1.1.2-mc1.20.1.jar`（需 Java 21+） |
+| 26.1+ | `penguin-server-fabric-1.1.2-mc26.2.jar`（需 Java 25+） |
+
+- **Fabric Loader**: 0.16.0+
+- **Fabric API**: 对应 MC 版本的最新版
+- **Fabric Language Kotlin**: 1.13.0+
 - **QQ 开放平台机器人**（需提审上线后才能收到群事件）
 
 ## 安装方法

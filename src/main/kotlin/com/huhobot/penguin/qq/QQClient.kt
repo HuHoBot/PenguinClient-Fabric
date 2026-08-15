@@ -20,7 +20,8 @@ data class GroupMessage(
     val userId: String,
     val username: String?,
     val memberRole: String?,
-    val timestamp: String?
+    val timestamp: String?,
+    val attachments: List<Map<*, *>>? = null  // 附件列表（图片等）
 )
 
 private const val OP_DISPATCH = 0
@@ -308,7 +309,8 @@ class QQClient(private val cfg: PenguinConfig) {
             userId = (author?.get("id") as? String) ?: "",
             username = author?.get("username") as? String,
             memberRole = author?.get("member_role") as? String,
-            timestamp = d["timestamp"] as? String
+            timestamp = d["timestamp"] as? String,
+            attachments = d["attachments"] as? List<Map<*, *>>
         )
 
         if (cfg.debugLogEvents) {
