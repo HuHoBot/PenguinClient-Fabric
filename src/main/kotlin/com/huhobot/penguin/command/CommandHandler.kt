@@ -101,10 +101,11 @@ class CommandHandler(
 
             // 根据配置选择输出方式
             if (cfg.motdUseMarkdown && players != null) {
-                // Markdown 模式
-                qqClient.sendMarkdown(ctx.groupId, buildOnlineMarkdown(players), ctx.msgId)
+                // Markdown 模式（带或不带图片）
+                val markdownImgUrl = if (cfg.motdPostImg) imgUrl else null
+                qqClient.sendMarkdown(ctx.groupId, buildOnlineMarkdown(players, markdownImgUrl), ctx.msgId)
             } else if (cfg.motdPostImg && players != null) {
-                // 图片模式
+                // 纯图片模式（文本 + 图片，非 Markdown）
                 val formattedPlayerList = players.joinToString("\n")
                 val text = cfg.motdText
                     .replace("{server}", cfg.serverName.ifEmpty { cfg.botName })
@@ -368,9 +369,18 @@ class CommandHandler(
                 !Regex("no players|无玩家|0\\s*位|0\\s*个|0\\s*人", RegexOption.IGNORE_CASE).containsMatchIn(it) }
     }
 
-    private fun buildOnlineMarkdown(players: List<String>): String {
-        val sb = StringBuilder("# 在线玩家\n\n当前在线：**${players.size}** 人")
-        if (players.isNotEmpty()) { sb.append("\n"); players.forEach { sb.append("\n- $it") } }
+    private fun buildOnlineMarkdown(players: List<String>, imgUrl: String? = null): String {
+        val sb = StringBuilder("# ${cfg.serverName.ifEmpty { cfg.botName }}查在线结果\n\n***\n\n")
+        // 如果有图片 URL，按照 QQ 官方 Markdown 语法添加图片
+        if (imgUrl != null) {
+            sb.append("![Motd #700px #389px]($imgUrl)\n\n")
+        }
+        sb.append("***\n\n")
+        sb.append("- **当前服内有**`${players.size}`**位玩家**\n")
+        if (players.isNotEmpty()) {
+            sb.append("- **名单如下:**\n\n")
+            players.forEachIndexed { index, name -> sb.append("${index + 1}. **$name**\n") }
+        }
         return sb.toString()
     }
 
