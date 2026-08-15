@@ -377,12 +377,17 @@ class QQClient(private val cfg: PenguinConfig) {
     }
 
     private fun doSendGroupMessageWithImage(groupId: String, text: String, imgUrl: String, msgId: String?) {
+        // 1. 先上传图片到 QQ 服务器
+        val fileInfo = uploadImage(groupId, imgUrl)
+            ?: throw RuntimeException("图片上传失败，未获取到 file_info")
+
+        // 2. 用 file_info 发送富媒体消息
         val token = getAccessTokenSync()
         val id = java.net.URLEncoder.encode(groupId, "UTF-8")
         val bodyMap = mutableMapOf<String, Any>(
             "msg_type" to 7,  // 富媒体消息
             "content" to text,
-            "media" to mapOf("file_info" to imgUrl)
+            "media" to mapOf("file_info" to fileInfo)
         )
         if (msgId != null) bodyMap["msg_id"] = msgId
 
@@ -395,6 +400,35 @@ class QQClient(private val cfg: PenguinConfig) {
                 "Content-Type" to "application/json; charset=utf-8"
             )
         )
+    }
+
+    /**
+     * 上传图片到 QQ 服务器，返回 file_info。
+     * 参考 SDK：https://github.com/HuHoBot/qqpd-bot-java FileMsg.java
+     */
+    private fun uploadImage(groupId: String, imgUrl: String): String? {
+        val token = getAccessTokenSync()
+        val id = java.net.URLEncoder.encode(groupId, "UTF-8")
+
+        // 上传请求体：file_type=1（图片），url=图片地址，srv_send_msg=false（不直接发送）
+        val uploadBody = jsonStringify(mapOf(
+            "file_type" to 1,
+            "url" to imgUrl,
+            "srv_send_msg" to false
+        ))
+
+        val resp = postJson(
+            "https://api.bot.qq.com/v2/groups/$id/files",
+            uploadBody,
+            mapOf(
+                "Authorization" to "QQBot $token",
+                "X-Union-Appid" to cfg.botAppId,
+                "Content-Type" to "application/json; charset=utf-8"
+            )
+        )
+
+        // 返回 file_info 字段
+        return resp["file_info"] as? String
     }
 
     private fun enqueue(task: () -> Unit) {
