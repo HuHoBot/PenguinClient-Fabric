@@ -7,36 +7,28 @@ HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，�
 ✅ **双向消息转发** - 游戏聊天转发到 QQ 群，QQ 群消息广播到游戏内  
 ✅ **进退服通知** - 玩家进服/退服自动推送到 QQ 群  
 ✅ **20 个内置群命令** - 查在线、白名单管理、管理员管理等  
-✅ **MOTD 图片** - `/查在线` 支持发送服务器状态图片（Markdown 内嵌）  
 ✅ **白名单自助绑定** - QQ 用户自助绑定游戏名并自动加入白名单  
 ✅ **管理员系统** - 支持 QQ 群管理员 / 手动管理员 / 双重模式  
 ✅ **敏感词过滤** - 正则过滤 + 词库过滤，可选 OpenAI 兼容二审  
 ✅ **自定义命令** - 支持参数占位符的自定义群命令  
 ✅ **全量转发** - 可按群开启非命令消息广播到游戏  
-✅ **中文域名支持** - server-ip 支持中文域名，自动转换为 ASCII
 
 ## 环境要求
 
-支持以下 Minecraft 版本：
-
-| Minecraft 版本 | JAR 文件 |
-|---|---|
-| 1.20.1 | `penguin-server-fabric-1.0.6-mc1.20.1.jar` |
-| 1.21.1 | `penguin-server-fabric-1.0.6-mc1.21.1.jar` |
-| 26.1 | `penguin-server-fabric-1.0.6-mc26.1.jar` |
-
-- **Fabric Loader**: 0.16.0+
-- **Fabric API**: 对应 MC 版本的最新版
-- **Fabric Language Kotlin**: 1.13.0+
+- **Minecraft**: 26.2
+- **Java**: 25+（26.x 起 Minecraft 要求 Java 25）
+- **Fabric Loader**: 0.19.0+
+- **Fabric API**: 0.157.0+26.2
+- **Fabric Language Kotlin**: 1.13.13+kotlin.2.4.10
 - **QQ 开放平台机器人**（需提审上线后才能收到群事件）
 
 ## 安装方法
 
 1. 确保已安装 [Fabric Loader](https://fabricmc.net/use/)
-2. 下载并安装以下依赖模组（对应你的 MC 版本）：
+2. 下载并安装以下依赖模组：
    - [Fabric API](https://modrinth.com/mod/fabric-api)
    - [Fabric Language Kotlin](https://modrinth.com/mod/fabric-language-kotlin)
-3. 将对应版本的 jar 放入服务器 `mods/` 目录
+3. 将 `penguin-server-fabric-1.1.0-26.2.jar` 放入服务器 `mods/` 目录
 4. 启动服务器，生成配置文件后关闭
 5. 编辑 `config/penguin-server.json`，填入机器人凭据
 6. 重新启动服务器
@@ -70,9 +62,9 @@ HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，�
     "leave-format": "[{server}] 🔴{name}退出服务器"
   },
   "motd": {
-    "server-ip": "你的服务器 IP 或域名",
+    "server-ip": "127.0.0.1",
     "server-port": 25565,
-    "api": "https://motd.txssb.cn/api/status_img?theme=simple&ip={ip}&port={port}&dark=true&lang=zh-CN",
+    "api": "http://motd.txssb.cn/api/app_img?ip={ip}&port={port}&dark=true&lang=zh-CN",
     "text": "[{server}] 在线玩家：{online}\n{players}",
     "post-img": false,
     "use-markdown": false
@@ -98,7 +90,6 @@ HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，�
 | `bot.groups` | 监听的 QQ 群 group_openid 列表（空 = 所有群） |
 | `serverName` | 服务器名称（用于进退服消息） |
 | `chat-format.start-with` | 游戏消息转发到 QQ 所需的前缀（空 = 全部转发） |
-| `motd.server-ip` | 服务器 IP 或域名，支持中文域名 |
 | `motd.post-img` | `/查在线` 是否发送 MOTD 图片（true/false） |
 | `motd.api` | MOTD 图片 API 地址，支持 `{ip}` `{port}` 占位符 |
 | `motd.use-markdown` | `/查在线` 是否使用 Markdown 格式（true/false） |
@@ -107,20 +98,17 @@ HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，�
 
 ### MOTD 图片配置
 
-`/查在线` 命令支持四种显示模式（优先级从高到低）：
+`/查在线` 命令支持三种显示模式：
 
-1. **Markdown + 图片模式**（`use-markdown = true` 且 `post-img = true`）：推荐，Markdown 卡片内嵌 MOTD 图片
-2. **纯图片模式**（`use-markdown = false` 且 `post-img = true`）：文本 + MOTD 图片
-3. **纯 Markdown 模式**（`use-markdown = true` 且 `post-img = false`）：仅 Markdown 格式
-4. **纯文本模式**（两者都为 false）：显示原始 `list` 命令输出
+1. **MOTD 图片模式**（`motd.post-img = true`）：发送服务器状态图片
+   - 使用 `motd.api` 配置的 API 生成图片
+   - 推荐 API：`http://motd.txssb.cn/api/app_img?ip={ip}&port={port}&dark=true&lang=zh-CN`
+   - 参数说明：`dark=true` 深色模式，`dark=false` 浅色模式
+   - 详细文档：https://motd.txssb.cn/docs
 
-**推荐 API（默认）：**
-```
-https://motd.txssb.cn/api/status_img?theme=simple&ip={ip}&port={port}&dark=true&lang=zh-CN
-```
-- `theme=simple` 简洁主题
-- `dark=true` 深色模式，`dark=false` 浅色模式
-- 详细文档：https://motd.txssb.cn/docs
+2. **Markdown 模式**（`motd.use-markdown = true`）：使用 Markdown 格式显示
+
+3. **纯文本模式**（两者都为 false）：显示原始 `list` 命令输出
 
 **注意**：简幻欢（Simpfun）服务器可能无法使用 MOTD 图片查询。
 
@@ -187,6 +175,8 @@ https://motd.txssb.cn/api/status_img?theme=simple&ip={ip}&port={port}&dark=true&
 ```bash
 ./gradlew build
 ```
+
+构建产物位于 `build/libs/penguin-server-fabric-1.1.0-26.2.jar`
 
 ## 相关项目
 

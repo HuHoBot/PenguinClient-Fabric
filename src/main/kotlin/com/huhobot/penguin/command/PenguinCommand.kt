@@ -3,12 +3,12 @@ package com.huhobot.penguin.command
 import com.huhobot.penguin.PenguinServerMod
 import com.mojang.brigadier.CommandDispatcher
 import com.mojang.brigadier.arguments.StringArgumentType
-import com.mojang.brigadier.context.CommandContext
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback
-import net.minecraft.server.command.CommandManager.argument
-import net.minecraft.server.command.CommandManager.literal
-import net.minecraft.server.command.ServerCommandSource
-import net.minecraft.text.Text
+import net.minecraft.commands.CommandSourceStack
+import net.minecraft.commands.Commands.argument
+import net.minecraft.commands.Commands.literal
+import net.minecraft.network.chat.Component
+import net.minecraft.server.permissions.Permissions
 
 /**
  * 注册 /penguin 控制台/OP 命令，对齐 BDS 版 huhobot reload / huhobot info。
@@ -22,23 +22,24 @@ object PenguinCommand {
         }
     }
 
-    private fun registerCommands(dispatcher: CommandDispatcher<ServerCommandSource>) {
+    private fun registerCommands(dispatcher: CommandDispatcher<CommandSourceStack>) {
         dispatcher.register(
             literal("penguin")
-                .requires { it.hasPermissionLevel(4) }
+                // 26.x 用 PermissionSet 取代旧的整数权限等级，COMMANDS_OWNER 等价于旧的 level 4
+                .requires { it.permissions().hasPermission(Permissions.COMMANDS_OWNER) }
                 .then(
                     literal("reload").executes { ctx ->
                         PenguinServerMod.reload()
-                        ctx.source.sendFeedback({ Text.literal("[PenguinServer] 配置已重载，QQ 网关已重启") }, true)
+                        ctx.source.sendSuccess({ Component.literal("[PenguinServer] 配置已重载，QQ 网关已重启") }, true)
                         1
                     }
                 )
                 .then(
                     literal("info").executes { ctx ->
-                        ctx.source.sendFeedback({
-                            Text.literal(
-                                "[PenguinServer] 版本 1.0.0\n" +
-                                "环境：Fabric 1.20.1 服务端\n" +
+                        ctx.source.sendSuccess({
+                            Component.literal(
+                                "[PenguinServer] 版本 1.1.0-26.2\n" +
+                                "环境：Fabric 26.2 服务端\n" +
                                 "状态：${if (PenguinServerMod.config.botAppId.isNotBlank()) "已配置" else "未配置（请编辑 config/penguin-server.json）"}"
                             )
                         }, false)
@@ -54,7 +55,7 @@ object PenguinCommand {
                                     for (groupId in PenguinServerMod.config.botGroups) {
                                         PenguinServerMod.qqClient.sendGroupMessage(groupId, msg)
                                     }
-                                    ctx.source.sendFeedback({ Text.literal("[PenguinServer] 已发送到 QQ 群：$msg") }, false)
+                                    ctx.source.sendSuccess({ Component.literal("[PenguinServer] 已发送到 QQ 群：$msg") }, false)
                                     1
                                 }
                         )

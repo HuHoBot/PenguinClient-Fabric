@@ -67,7 +67,7 @@ object PenguinServerMod : ModInitializer {
         // 拦截玩家聊天 → 转发到 QQ
         ServerMessageEvents.CHAT_MESSAGE.register { message, sender, _ ->
             val startWith = config.chatStartWith
-            val raw = message.content.string
+            val raw = message.decoratedContent().string
             if (startWith.isEmpty() || raw.startsWith(startWith)) {
                 val content = if (startWith.isEmpty()) raw else raw.removePrefix(startWith)
                 forwardGameMessage(sender.name.string, content)
@@ -124,7 +124,9 @@ object PenguinServerMod : ModInitializer {
         val srv = server ?: return
         srv.execute {
             try {
-                srv.playerManager.broadcast(net.minecraft.text.Text.literal(message), false)
+                srv.playerList.broadcastSystemMessage(
+                    net.minecraft.network.chat.Component.literal(message), false
+                )
             } catch (e: Exception) {
                 logger.error("广播到游戏失败", e)
             }
@@ -136,15 +138,15 @@ object PenguinServerMod : ModInitializer {
         val srv = server ?: return Pair(false, "服务器未就绪")
         return try {
             val output = StringBuilder()
-            val result = srv.commandManager.dispatcher.execute(
+            val result = srv.commands.dispatcher.execute(
                 command,
-                srv.commandSource.withOutput(object : net.minecraft.server.command.CommandOutput {
-                    override fun sendMessage(message: net.minecraft.text.Text) {
+                srv.createCommandSourceStack().withSource(object : net.minecraft.commands.CommandSource {
+                    override fun sendSystemMessage(message: net.minecraft.network.chat.Component) {
                         output.append(message.string).append("\n")
                     }
-                    override fun shouldReceiveFeedback() = true
-                    override fun shouldTrackOutput() = true
-                    override fun shouldBroadcastConsoleToOps() = false
+                    override fun acceptsSuccess() = true
+                    override fun acceptsFailure() = true
+                    override fun shouldInformAdmins() = false
                 })
             )
             Pair(result >= 1, output.toString().trim())
