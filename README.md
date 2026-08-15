@@ -1,14 +1,17 @@
-# PenguinClient-Fabric
+# PenguinServer-Fabric
 
-HuHoBot Penguin 的 Fabric 客户端模组，用于在 Minecraft 1.20.1 客户端与服务器端 HuHoBot 通信。
+HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，实现 QQ 群与 Minecraft Java 版服务器的双向消息桥接。
 
 ## 功能特性
 
-✅ **QQ 消息接收** - 实时接收 QQ 群消息并显示在游戏聊天中  
-✅ **游戏消息发送** - 通过 `#` 前缀将游戏消息发送到 QQ 群  
-✅ **玩家进出提示** - 显示其他玩家的进服/退服通知  
-✅ **自定义格式** - 可配置消息显示格式和颜色  
-✅ **敏感词过滤** - 支持自定义敏感词过滤列表  
+✅ **双向消息转发** - 游戏聊天转发到 QQ 群，QQ 群消息广播到游戏内  
+✅ **进退服通知** - 玩家进服/退服自动推送到 QQ 群  
+✅ **20 个内置群命令** - 查在线、白名单管理、管理员管理等  
+✅ **白名单自助绑定** - QQ 用户自助绑定游戏名并自动加入白名单  
+✅ **管理员系统** - 支持 QQ 群管理员 / 手动管理员 / 双重模式  
+✅ **敏感词过滤** - 正则过滤 + 词库过滤，可选 OpenAI 兼容二审  
+✅ **自定义命令** - 支持参数占位符的自定义群命令  
+✅ **全量转发** - 可按群开启非命令消息广播到游戏  
 
 ## 环境要求
 
@@ -16,128 +19,141 @@ HuHoBot Penguin 的 Fabric 客户端模组，用于在 Minecraft 1.20.1 客户�
 - **Fabric Loader**: 0.16.0+
 - **Fabric API**: 0.92.9+1.20.1
 - **Fabric Language Kotlin**: 1.13.11+kotlin.2.3.21
+- **QQ 开放平台机器人**（需提审上线后才能收到群事件）
 
 ## 安装方法
 
 1. 确保已安装 [Fabric Loader](https://fabricmc.net/use/)
 2. 下载并安装以下依赖模组：
-   - [Fabric API 0.92.9+1.20.1](https://modrinth.com/mod/fabric-api)
-   - [Fabric Language Kotlin 1.13.11+kotlin.2.3.21](https://modrinth.com/mod/fabric-language-kotlin)
-3. 将 `penguin-client-fabric-1.0.0.jar` 放入 `.minecraft/mods/` 目录
-4. 启动游戏
+   - [Fabric API](https://modrinth.com/mod/fabric-api)
+   - [Fabric Language Kotlin](https://modrinth.com/mod/fabric-language-kotlin)
+3. 将 `penguin-server-fabric-1.0.0.jar` 放入服务器 `mods/` 目录
+4. 启动服务器，生成配置文件后关闭
+5. 编辑 `config/penguin-server.json`，填入机器人凭据
+6. 重新启动服务器
 
-## 使用说明
+## 配置文件
 
-### 基础功能
-
-- **发送消息到 QQ**：在聊天框输入 `#你的消息`（默认前缀为 `#`）
-- **接收 QQ 消息**：QQ 群消息会自动显示在游戏聊天中，格式为 `§b[QQ]§r 昵称: 消息内容`
-- **快捷键**：按 `P` 键打开快速发送提示（可在控制设置中修改）
-
-### 配置文件
-
-首次运行后会在 `.minecraft/config/penguin-client.json` 生成配置文件：
+首次启动后自动生成 `config/penguin-server.json`：
 
 ```json
 {
-  "enabled": true,
-  "chatPrefix": "#",
-  "showQQMessages": true,
-  "showJoinLeave": true,
-  "messageFormat": {
-    "fromQQ": "§b[QQ]§r {name}: {message}",
-    "toQQ": "[游戏] {name}: {message}",
-    "joinServer": "§a🟢 {name} 进入服务器§r",
-    "leaveServer": "§c🔴 {name} 退出服务器§r"
+  "bot": {
+    "app-id": "你的 AppID",
+    "secret": "你的 Secret",
+    "name": "HuHoBot",
+    "groups": ["群的 group_openid"]
   },
-  "filters": {
-    "enableFilter": true,
-    "sensitiveWords": []
+  "serverName": "我的服务器",
+  "chat-format": {
+    "from-game": "[游戏] {name}: {message}",
+    "from-group": "[QQ] {name}: {message}",
+    "post-chat": true,
+    "start-with": ""
+  },
+  "whitelist": {
+    "add-command": "whitelist add {name}",
+    "del-command": "whitelist remove {name}"
+  },
+  "join-leave": {
+    "enabled": true,
+    "join-format": "[{server}] 🟢{name}进入服务器",
+    "leave-format": "[{server}] 🔴{name}退出服务器"
+  },
+  "admin": {
+    "mode": "both",
+    "openids": []
+  },
+  "audit": {
+    "base-url": "",
+    "api-key": "",
+    "model": "gpt-4o-mini"
   }
 }
 ```
 
-#### 配置项说明
+### 主要配置项
 
-| 配置项 | 类型 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `enabled` | Boolean | `true` | 是否启用模组 |
-| `chatPrefix` | String | `#` | 发送到 QQ 的消息前缀 |
-| `showQQMessages` | Boolean | `true` | 是否显示 QQ 消息 |
-| `showJoinLeave` | Boolean | `true` | 是否显示玩家进出提示 |
-| `messageFormat.fromQQ` | String | `§b[QQ]§r {name}: {message}` | QQ 消息显示格式 |
-| `messageFormat.toQQ` | String | `[游戏] {name}: {message}` | 发送到 QQ 的格式 |
-| `messageFormat.joinServer` | String | `§a🟢 {name} 进入服务器§r` | 玩家加入提示 |
-| `messageFormat.leaveServer` | String | `§c🔴 {name} 退出服务器§r` | 玩家离开提示 |
-| `filters.enableFilter` | Boolean | `true` | 是否启用敏感词过滤 |
-| `filters.sensitiveWords` | Array | `[]` | 敏感词列表 |
+| 配置项 | 说明 |
+|--------|------|
+| `bot.app-id` | QQ 开放平台机器人 AppID |
+| `bot.secret` | QQ 开放平台机器人 Secret |
+| `bot.groups` | 监听的 QQ 群 group_openid 列表（空 = 所有群） |
+| `serverName` | 服务器名称（用于进退服消息） |
+| `chat-format.start-with` | 游戏消息转发到 QQ 所需的前缀（空 = 全部转发） |
+| `admin.mode` | 管理员模式：`qq`/`manual`/`both` |
+| `audit.base-url` | OpenAI 兼容接口地址（留空则不启用 AI 二审） |
 
-#### 颜色代码
+## 内置群命令
 
-消息格式支持 Minecraft 颜色代码：
+@机器人 发送以下命令：
 
-- `§0` - 黑色, `§1` - 深蓝, `§2` - 深绿, `§3` - 深青
-- `§4` - 深红, `§5` - 紫色, `§6` - 金色, `§7` - 灰色
-- `§8` - 深灰, `§9` - 蓝色, `§a` - 绿色, `§b` - 青色
-- `§c` - 红色, `§d` - 粉红, `§e` - 黄色, `§f` - 白色
-- `§l` - 粗体, `§o` - 斜体, `§n` - 下划线, `§r` - 重置
+| 命令 | 权限 | 说明 |
+|------|------|------|
+| `查在线` | 所有人 | 查看在线玩家列表 |
+| `在线服务器` | 所有人 | 查看服务器是否在线 |
+| `查信息` | 所有人 | 查看自己的 OpenID 和认证状态 |
+| `发消息 <内容>` | 所有人 | 广播消息到游戏 |
+| `绑定白名单 <游戏名>` | 所有人 | 自助绑定并加入白名单 |
+| `解除绑定` | 所有人 | 解除绑定并移出白名单 |
+| `认证` | 所有人 | 查看/申请认证状态 |
+| `添加白名单 <玩家名>` | 管理员 | 直接添加白名单 |
+| `删除白名单 <玩家名>` | 管理员 | 移除白名单 |
+| `查白名单` | 管理员 | 查看白名单列表 |
+| `解绑白名单 <玩家名>` | 管理员 | 解绑指定玩家并移出白名单 |
+| `加管理 <OpenID>` | 管理员 | 添加手动管理员 |
+| `删管理 <OpenID>` | 管理员 | 删除手动管理员 |
+| `查管理` | 管理员 | 查看管理员列表 |
+| `管理方式 <QQ/手动/双重>` | 管理员 | 设置管理员认定方式 |
+| `全量 <开/关>` | 管理员 | 开关全量消息转发到游戏 |
+| `执行 <命令名>` | 所有人 | 执行自定义命令（permission=0） |
+| `管理员执行 <命令名>` | 管理员 | 执行自定义命令（任意权限） |
+| `认证 <OpenID>` | 管理员 | 认证指定用户 |
+| `解除认证` | 所有人 | 解除自己的认证 |
 
-## 网络通道
+## 服务端命令
 
-模组使用以下自定义网络通道与服务端通信（需要服务端 HuHoBot Fabric 支持）：
+需要 OP 权限（权限等级 4）：
 
-- `huhobot:chat_message` - 发送游戏消息到 QQ
-- `huhobot:qq_message` - 接收 QQ 消息
-- `huhobot:player_join` - 接收玩家加入通知
-- `huhobot:player_leave` - 接收玩家离开通知
+```
+/penguin reload        重载配置并重启 QQ 网关
+/penguin info          查看模组状态
+/penguin send <消息>   手动向所有配置的群发送消息
+```
 
-## 构建项目
+## 自定义命令
+
+在配置文件 `custom-commands` 中配置：
+
+```json
+"custom-commands": [
+  {
+    "key": "天气",
+    "command": "weather clear",
+    "permission": 0
+  },
+  {
+    "key": "踢人",
+    "command": "kick {0}",
+    "permission": 1
+  }
+]
+```
+
+占位符：`{params}` 全部参数、`{0}` `{1}` 第 N 个参数、`{group}` 群 OpenID、`{user}` 用户 OpenID
+
+## 构建
 
 ```bash
-# Windows
-gradlew.bat build
-
-# Linux/macOS
 ./gradlew build
 ```
 
-构建完成后，模组文件位于 `build/libs/penguin-client-fabric-1.0.0.jar`
+构建产物位于 `build/libs/penguin-server-fabric-1.0.0.jar`
 
-## 服务器端要求
+## 相关项目
 
-此模组需要服务器端安装配套的 **HuHoBot Fabric 插件**，否则无法正常工作。
-
-服务端需要实现以下功能：
-1. 监听客户端发送的 `huhobot:chat_message` 数据包
-2. 将 QQ 消息通过 `huhobot:qq_message` 发送给客户端
-3. 转发玩家进出消息到客户端
-
-## 故障排查
-
-**问题：收不到 QQ 消息**
-- 检查服务器是否安装了 HuHoBot Fabric 插件
-- 确认配置文件中 `showQQMessages` 为 `true`
-- 查看游戏日志是否有连接成功的提示
-
-**问题：发送的消息没有转发到 QQ**
-- 确认消息以正确的前缀开头（默认 `#`）
-- 检查服务器端 HuHoBot 配置是否正确
-- 查看客户端日志是否有发送成功的提示
-
-**问题：模组加载失败**
-- 确认已安装 Fabric API 和 Fabric Language Kotlin
-- 检查 Minecraft 版本是否为 1.20.1
-- 查看崩溃日志并提交 issue
+- [PenguinBDSClient](https://github.com/Beeeee-really/PenguinBDSClient) - 基岩版（BDS/LeviLamina）版本
 
 ## 开源许可
 
 MIT License
-
-## 相关项目
-
-- [HuHoBotPenguin-LLSE](https://github.com/HuHoBot) - 基岩版服务端插件
-- [HuHoBot](https://github.com/HuHoBot) - QQ 机器人核心
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
