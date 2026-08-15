@@ -1,2 +1,4 @@
-key.penguin.quick_send=Quick Send QQ Message
-category.penguin.general=Penguin Client
+{
+  "key.penguin.quick_send": "Quick Send QQ Message",
+  "category.penguin.general": "Penguin Client"
+}
