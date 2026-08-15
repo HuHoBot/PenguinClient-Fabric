@@ -116,6 +116,9 @@ jobs:
         with:
           name: PenguinClient-Fabric ${{ github.ref_name }}
           body: |
+            ## 更新内容
+            查看完整更新内容：[${{ github.ref_name }} commits](${{ github.server_url }}/${{ github.repository }}/commits/${{ github.ref_name }})
+
             ## 支持版本
             | 文件 | 适用 Minecraft 版本 |
             |------|-------------------|

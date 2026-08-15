@@ -22,8 +22,8 @@ HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，�
 
 | Minecraft 版本 | JAR 文件 |
 |---|---|
-| 1.20.1 ~ 1.21.x | `penguin-server-fabric-1.1.0-mc1.20.1.jar`（需 Java 21+） |
-| 26.1+ | `penguin-server-fabric-1.1.0-mc26.2.jar`（需 Java 25+） |
+| 1.20.1 ~ 1.21.x | `penguin-server-fabric-1.1.1-mc1.20.1.jar`（需 Java 21+） |
+| 26.1+ | `penguin-server-fabric-1.1.1-mc26.2.jar`（需 Java 25+） |
 
 - **Fabric Loader**: 0.16.0+
 - **Fabric API**: 对应 MC 版本的最新版
