@@ -55,7 +55,7 @@ class PenguinConfig private constructor(private val raw: MutableMap<String, Any?
     // ---- motd ----
     val motdServerIp: String get() = getString("motd.server-ip", "127.0.0.1")
     val motdServerPort: Int get() = (raw["motd.server-port"] as? Number)?.toInt() ?: 25565
-    val motdApi: String get() = getString("motd.api", "http://motd.txssb.cn/api/app_img?ip={ip}&port={port}&dark=true&lang=zh-CN")
+    val motdApi: String get() = getString("motd.api", "https://motd.txssb.cn/api/status_img?theme=simple&ip={ip}&port={port}&dark=true&lang=zh-CN")
     val motdText: String get() = getString("motd.text", "[{server}] 在线玩家：{online}\n{players}")
     val motdPostImg: Boolean get() = getBool("motd.post-img", false)
     val motdUseMarkdown: Boolean get() = getBool("motd.use-markdown", false)
@@ -132,7 +132,7 @@ class PenguinConfig private constructor(private val raw: MutableMap<String, Any?
             put("join-leave.leave-format", "[{server}] 🔴{name}退出服务器")
             put("motd.server-ip", "127.0.0.1")
             put("motd.server-port", 25565)
-            put("motd.api", "http://motd.txssb.cn/api/app_img?ip={ip}&port={port}&dark=true&lang=zh-CN")
+            put("motd.api", "https://motd.txssb.cn/api/status_img?theme=simple&ip={ip}&port={port}&dark=true&lang=zh-CN")
             put("motd.text", "[{server}] 在线玩家：{online}\n{players}")
             put("motd.post-img", false)
             put("motd.use-markdown", false)
