@@ -67,7 +67,7 @@ object PenguinServerMod : ModInitializer {
         // 拦截玩家聊天 → 转发到 QQ
         ServerMessageEvents.CHAT_MESSAGE.register { message, sender, _ ->
             val startWith = config.chatStartWith
-            val raw = message.content
+            val raw = message.content.string
             if (startWith.isEmpty() || raw.startsWith(startWith)) {
                 val content = if (startWith.isEmpty()) raw else raw.removePrefix(startWith)
                 forwardGameMessage(sender.name.string, content)
@@ -138,8 +138,13 @@ object PenguinServerMod : ModInitializer {
             val output = StringBuilder()
             val result = srv.commandManager.dispatcher.execute(
                 command,
-                srv.commandSource.withOutput(net.minecraft.server.command.CommandOutput { msg ->
-                    output.append(msg).append("\n")
+                srv.commandSource.withOutput(object : net.minecraft.server.command.CommandOutput {
+                    override fun sendMessage(message: net.minecraft.text.Text) {
+                        output.append(message.string).append("\n")
+                    }
+                    override fun shouldReceiveFeedback() = true
+                    override fun shouldTrackOutput() = true
+                    override fun shouldBroadcastConsoleToOps() = false
                 })
             )
             Pair(result >= 1, output.toString().trim())

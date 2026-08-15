@@ -19,8 +19,15 @@ private val DEFAULT_WORDS = listOf("傻逼", "操你", "色情", "反动", "赌�
  */
 object TextFilter {
 
-    private fun escapeRegex(word: String): String =
-        word.replace(Regex("[.*+?^${}()|\\[\\]\\\\]"), "\\\\$0")
+    private fun escapeRegex(word: String): String {
+        val metaChars = """\.^$*+?()[]{}|"""
+        val sb = StringBuilder()
+        for (c in word) {
+            if (c in metaChars) sb.append('\\')
+            sb.append(c)
+        }
+        return sb.toString()
+    }
 
     private fun sensitiveWordsDir(): File {
         val gameDir = FabricLoader.getInstance().gameDir.toFile()
