@@ -49,6 +49,8 @@ class WsConnection(
     fun onClose(cb: (Int, String) -> Unit) { closeCb = cb }
     fun onError(cb: (Exception) -> Unit) { errorCb = cb }
 
+    fun isConnected(): Boolean = !closed.get() && socket?.isConnected == true && socket?.isClosed == false
+
     fun connect() {
         Thread {
             try {

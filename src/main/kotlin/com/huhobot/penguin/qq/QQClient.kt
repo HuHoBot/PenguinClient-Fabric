@@ -69,6 +69,9 @@ class QQClient(private val cfg: PenguinConfig) {
     private val sendQueue = LinkedBlockingQueue<() -> Unit>(256)
     private var sendThread: Thread? = null
 
+    // 独立 watchdog 线程：每 60 秒用系统时钟检测连接状态，断线自动重连
+    @Volatile private var watchdogThread: Thread? = null
+
     // 去重
     private val recentIds = ArrayDeque<String>(200)
 
@@ -80,17 +83,40 @@ class QQClient(private val cfg: PenguinConfig) {
         stopped.set(false)
         firstConnect = true
         startSendThread()
+        startWatchdog()
         connectAsync(0)
     }
 
     fun stop() {
         stopped.set(true)
+        watchdogThread?.interrupt()
+        watchdogThread = null
         heartbeatThread?.interrupt()
         heartbeatThread = null
         sendThread?.interrupt()
         sendThread = null
         wsConn?.close(1000, "shutdown")
         wsConn = null
+    }
+
+    /** 独立 watchdog，完全不依赖 MC 服务器线程或时钟。每 60s 检测一次，断线立即重连并刷新 token。 */
+    private fun startWatchdog() {
+        watchdogThread?.interrupt()
+        watchdogThread = Thread {
+            try {
+                while (!Thread.interrupted() && !stopped.get()) {
+                    Thread.sleep(60_000L)
+                    if (stopped.get()) break
+                    if (wsConn?.isConnected() != true) {
+                        if (cfg.debugLogEvents) logger.info("Watchdog：连接已断开，刷新 token 并重连…")
+                        accessToken = null
+                        tokenExpireAt = 0
+                        connectAsync(0)
+                    }
+                }
+            } catch (_: InterruptedException) {}
+        }.also { it.isDaemon = true; it.name = "penguin-watchdog" }
+        watchdogThread!!.start()
     }
 
     // ---- 连接流程 ----
