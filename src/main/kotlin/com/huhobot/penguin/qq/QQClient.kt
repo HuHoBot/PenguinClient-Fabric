@@ -355,7 +355,6 @@ class QQClient(private val cfg: PenguinConfig) {
     }
 
     private fun doSendGroupMessage(groupId: String, content: String, msgId: String?, msgType: Int) {
-        val token = getAccessTokenSync()
         val id = java.net.URLEncoder.encode(groupId, "UTF-8")
         val bodyMap = mutableMapOf<String, Any>("msg_type" to msgType)
         if (msgType == 2) {
@@ -365,15 +364,28 @@ class QQClient(private val cfg: PenguinConfig) {
         }
         if (msgId != null) bodyMap["msg_id"] = msgId
 
-        postJson(
-            "https://api.bot.qq.com/v2/groups/$id/messages",
-            jsonStringify(bodyMap),
-            mapOf(
-                "Authorization" to "QQBot $token",
-                "X-Union-Appid" to cfg.botAppId,
-                "Content-Type" to "application/json; charset=utf-8"
-            )
-        )
+        // 最多重试一次（token 过期时自动刷新后重发）
+        repeat(2) { attempt ->
+            val token = getAccessTokenSync()
+            try {
+                postJson(
+                    "https://api.bot.qq.com/v2/groups/$id/messages",
+                    jsonStringify(bodyMap),
+                    mapOf(
+                        "Authorization" to "QQBot $token",
+                        "X-Union-Appid" to cfg.botAppId,
+                        "Content-Type" to "application/json; charset=utf-8"
+                    )
+                )
+                return
+            } catch (e: RuntimeException) {
+                if (attempt == 0 && e.message?.startsWith("HTTP 401") == true) {
+                    // token 已被清除，下次循环会重新获取
+                } else {
+                    throw e
+                }
+            }
+        }
     }
 
     private fun doSendGroupMessageWithImage(groupId: String, text: String, imgUrl: String, msgId: String?) {
@@ -507,6 +519,11 @@ class QQClient(private val cfg: PenguinConfig) {
         val code = conn.responseCode
         val resp = (if (code in 200..299) conn.inputStream else conn.errorStream)
             .bufferedReader(StandardCharsets.UTF_8).readText()
+        if (code == 401) {
+            // token 过期，清除缓存强制下次重新获取
+            accessToken = null
+            tokenExpireAt = 0
+        }
         if (code !in 200..299) throw RuntimeException("HTTP $code：${resp.take(300)}")
         return parseJson(resp)
     }
