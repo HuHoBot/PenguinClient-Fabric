@@ -93,10 +93,15 @@ class CommandHandler(
             if (output.isEmpty()) { reply(ctx, "无输出"); return@Cmd }
             val players = parsePlayerList(output)
 
-            // 构建 MOTD 图片 URL
+            // 构建 MOTD 图片 URL，自动把中文域名转成 ASCII（Punycode）
             val timestampSeconds = System.currentTimeMillis() / 1000
+            val asciiIp = try {
+                java.net.IDN.toASCII(cfg.motdServerIp, java.net.IDN.ALLOW_UNASSIGNED)
+            } catch (_: Exception) {
+                cfg.motdServerIp
+            }
             val imgUrl = cfg.motdApi
-                .replace("{ip}", cfg.motdServerIp)
+                .replace("{ip}", asciiIp)
                 .replace("{port}", cfg.motdServerPort.toString()) + "&$timestampSeconds"
 
             // 根据配置选择输出方式
