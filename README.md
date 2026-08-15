@@ -27,7 +27,7 @@ HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，�
 2. 下载并安装以下依赖模组：
    - [Fabric API](https://modrinth.com/mod/fabric-api)
    - [Fabric Language Kotlin](https://modrinth.com/mod/fabric-language-kotlin)
-3. 将 `penguin-server-fabric-1.0.0.jar` 放入服务器 `mods/` 目录
+3. 将 `penguin-server-fabric-1.0.2.jar` 放入服务器 `mods/` 目录
 4. 启动服务器，生成配置文件后关闭
 5. 编辑 `config/penguin-server.json`，填入机器人凭据
 6. 重新启动服务器
@@ -60,6 +60,14 @@ HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，�
     "join-format": "[{server}] 🟢{name}进入服务器",
     "leave-format": "[{server}] 🔴{name}退出服务器"
   },
+  "motd": {
+    "server-ip": "127.0.0.1",
+    "server-port": 25565,
+    "api": "http://motd.txssb.cn/api/app_img?ip={ip}&port={port}&dark=true&lang=zh-CN",
+    "text": "[{server}] 在线玩家：{online}\n{players}",
+    "post-img": false,
+    "use-markdown": false
+  },
   "admin": {
     "mode": "both",
     "openids": []
@@ -81,8 +89,27 @@ HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，�
 | `bot.groups` | 监听的 QQ 群 group_openid 列表（空 = 所有群） |
 | `serverName` | 服务器名称（用于进退服消息） |
 | `chat-format.start-with` | 游戏消息转发到 QQ 所需的前缀（空 = 全部转发） |
+| `motd.post-img` | `/查在线` 是否发送 MOTD 图片（true/false） |
+| `motd.api` | MOTD 图片 API 地址，支持 `{ip}` `{port}` 占位符 |
+| `motd.use-markdown` | `/查在线` 是否使用 Markdown 格式（true/false） |
 | `admin.mode` | 管理员模式：`qq`/`manual`/`both` |
 | `audit.base-url` | OpenAI 兼容接口地址（留空则不启用 AI 二审） |
+
+### MOTD 图片配置
+
+`/查在线` 命令支持三种显示模式：
+
+1. **MOTD 图片模式**（`motd.post-img = true`）：发送服务器状态图片
+   - 使用 `motd.api` 配置的 API 生成图片
+   - 推荐 API：`http://motd.txssb.cn/api/app_img?ip={ip}&port={port}&dark=true&lang=zh-CN`
+   - 参数说明：`dark=true` 深色模式，`dark=false` 浅色模式
+   - 详细文档：https://motd.txssb.cn/docs
+
+2. **Markdown 模式**（`motd.use-markdown = true`）：使用 Markdown 格式显示
+
+3. **纯文本模式**（两者都为 false）：显示原始 `list` 命令输出
+
+**注意**：简幻欢（Simpfun）服务器可能无法使用 MOTD 图片查询。
 
 ## 内置群命令
 
@@ -148,7 +175,7 @@ HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，�
 ./gradlew build
 ```
 
-构建产物位于 `build/libs/penguin-server-fabric-1.0.0.jar`
+构建产物位于 `build/libs/penguin-server-fabric-1.0.2.jar`
 
 ## 相关项目
 

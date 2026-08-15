@@ -342,6 +342,18 @@ class QQClient(private val cfg: PenguinConfig) {
         }
     }
 
+    fun sendGroupMessageWithImage(groupId: String, text: String, imgUrl: String, msgId: String? = null) {
+        enqueue {
+            try {
+                doSendGroupMessageWithImage(groupId, text, imgUrl, msgId)
+                if (cfg.debugLogEvents)
+                    logger.info("群消息（带图片）已发送 group=$groupId imgUrl=$imgUrl")
+            } catch (e: Exception) {
+                logger.error("群消息（带图片）发送失败 group=$groupId：${e.message}")
+            }
+        }
+    }
+
     private fun doSendGroupMessage(groupId: String, content: String, msgId: String?, msgType: Int) {
         val token = getAccessTokenSync()
         val id = java.net.URLEncoder.encode(groupId, "UTF-8")
@@ -351,6 +363,27 @@ class QQClient(private val cfg: PenguinConfig) {
         } else {
             bodyMap["content"] = content
         }
+        if (msgId != null) bodyMap["msg_id"] = msgId
+
+        postJson(
+            "https://api.bot.qq.com/v2/groups/$id/messages",
+            jsonStringify(bodyMap),
+            mapOf(
+                "Authorization" to "QQBot $token",
+                "X-Union-Appid" to cfg.botAppId,
+                "Content-Type" to "application/json; charset=utf-8"
+            )
+        )
+    }
+
+    private fun doSendGroupMessageWithImage(groupId: String, text: String, imgUrl: String, msgId: String?) {
+        val token = getAccessTokenSync()
+        val id = java.net.URLEncoder.encode(groupId, "UTF-8")
+        val bodyMap = mutableMapOf<String, Any>(
+            "msg_type" to 7,  // 富媒体消息
+            "content" to text,
+            "media" to mapOf("file_info" to imgUrl)
+        )
         if (msgId != null) bodyMap["msg_id"] = msgId
 
         postJson(

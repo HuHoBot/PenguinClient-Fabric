@@ -4,7 +4,7 @@ plugins {
     id("maven-publish")
 }
 
-version = "1.0.0"
+version = "1.0.2"
 group = "com.huhobot"
 
 base {

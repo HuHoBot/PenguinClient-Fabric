@@ -92,9 +92,30 @@ class CommandHandler(
             val (_, output) = PenguinServerMod.runCommand("list")
             if (output.isEmpty()) { reply(ctx, "无输出"); return@Cmd }
             val players = parsePlayerList(output)
-            if (cfg.featureMarkdownOnline && players != null) {
+
+            // 构建 MOTD 图片 URL
+            val timestampSeconds = System.currentTimeMillis() / 1000
+            val imgUrl = cfg.motdApi
+                .replace("{ip}", cfg.motdServerIp)
+                .replace("{port}", cfg.motdServerPort.toString()) + "&$timestampSeconds"
+
+            // 根据配置选择输出方式
+            if (cfg.motdUseMarkdown && players != null) {
+                // Markdown 模式
+                qqClient.sendMarkdown(ctx.groupId, buildOnlineMarkdown(players), ctx.msgId)
+            } else if (cfg.motdPostImg && players != null) {
+                // 图片模式
+                val formattedPlayerList = players.joinToString("\n")
+                val text = cfg.motdText
+                    .replace("{server}", cfg.serverName.ifEmpty { cfg.botName })
+                    .replace("{online}", players.size.toString())
+                    .replace("{players}", formattedPlayerList)
+                qqClient.sendGroupMessageWithImage(ctx.groupId, text, imgUrl, ctx.msgId)
+            } else if (cfg.featureMarkdownOnline && players != null) {
+                // 旧版 Markdown（向后兼容）
                 qqClient.sendMarkdown(ctx.groupId, buildOnlineMarkdown(players), ctx.msgId)
             } else {
+                // 纯文本
                 reply(ctx, output)
             }
         },
