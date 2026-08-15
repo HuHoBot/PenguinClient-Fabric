@@ -259,13 +259,6 @@ class CommandHandler(
 
     /** 群消息总入口。 */
     fun handle(message: GroupMessage) {
-        val groups = cfg.botGroups
-        if (groups.isNotEmpty() && !groups.contains(message.groupId)) {
-            if (cfg.debugLogEvents)
-                logger.info("群 ${message.groupId} 不在 bot.groups 白名单，忽略")
-            return
-        }
-
         val ctx = Ctx(
             msgId = message.id,
             groupId = message.groupId,
@@ -275,6 +268,16 @@ class CommandHandler(
         )
 
         val cleaned = normalizeContent(message.content)
+
+        // 查信息命令不受群限制，对齐官方版本逻辑
+        if (!cleaned.contains("查信息")) {
+            val groups = cfg.botGroups
+            if (groups.isNotEmpty() && !groups.contains(message.groupId)) {
+                if (cfg.debugLogEvents)
+                    logger.info("群 ${message.groupId} 不在 bot.groups 白名单，忽略")
+                return
+            }
+        }
         if (cleaned.isNotEmpty()) {
             val match = dispatch(cleaned)
             if (match != null) {
