@@ -8,7 +8,7 @@ version = "1.0.0"
 group = "com.huhobot"
 
 base {
-    archivesName.set("penguin-client-fabric")
+    archivesName.set("penguin-server-fabric")
 }
 
 repositories {

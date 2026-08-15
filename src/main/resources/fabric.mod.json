@@ -1,36 +1,30 @@
 {
   "schemaVersion": 1,
-  "id": "penguin-client-fabric",
+  "id": "penguin-server-fabric",
   "version": "${version}",
-  "name": "PenguinClient-Fabric",
-  "description": "HuHoBot Penguin 客户端模组 - 连接 QQ 群与 Minecraft 游戏聊天",
+  "name": "PenguinServer-Fabric",
+  "description": "HuHoBot Penguin Fabric 服务端模组 - 直连 QQ 官方机器人网关，双向桥接 Minecraft Java 版聊天",
   "authors": [
     "HuHoBot"
   ],
   "contact": {
-    "sources": "https://github.com/HuHoBot/PenguinClient"
+    "sources": "https://github.com/HuHoBot/PenguinServer"
   },
   "license": "MIT",
-  "icon": "assets/penguin-client-fabric/icon.png",
-  "environment": "client",
+  "environment": "server",
   "entrypoints": {
-    "client": [
+    "main": [
       {
         "adapter": "kotlin",
-        "value": "com.huhobot.penguin.PenguinClientMod"
+        "value": "com.huhobot.penguin.PenguinServerMod"
       }
     ]
   },
-  "mixins": [
-    "penguin-client-fabric.mixins.json"
-  ],
+  "mixins": [],
   "depends": {
     "fabricloader": ">=0.16.0",
     "fabric-api": ">=0.92.9+1.20.1",
     "fabric-language-kotlin": ">=1.13.0+kotlin.2.3.0",
     "minecraft": "~1.20.1"
-  },
-  "suggests": {
-    "another-mod": "*"
   }
 }

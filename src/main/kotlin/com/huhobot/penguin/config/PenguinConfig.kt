@@ -2,71 +2,207 @@ package com.huhobot.penguin.config
 
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.google.gson.reflect.TypeToken
 import net.fabricmc.loader.api.FabricLoader
 import org.slf4j.LoggerFactory
 import java.io.File
 
-data class PenguinConfig(
-    var enabled: Boolean = true,
-    var chatPrefix: String = "#",
-    var showQQMessages: Boolean = true,
-    var showJoinLeave: Boolean = true,
-    var messageFormat: MessageFormat = MessageFormat(),
-    var filters: Filters = Filters()
-) {
-    data class MessageFormat(
-        var fromQQ: String = "§b[QQ]§r {name}: {message}",
-        var toQQ: String = "[游戏] {name}: {message}",
-        var joinServer: String = "§a🟢 {name} 进入服务器§r",
-        var leaveServer: String = "§c🔴 {name} 退出服务器§r"
-    )
+private val logger = LoggerFactory.getLogger("PenguinServer-Fabric/Config")
+private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
 
-    data class Filters(
-        var enableFilter: Boolean = true,
-        var sensitiveWords: MutableList<String> = mutableListOf()
-    )
+private const val CONFIG_VERSION = 2
 
-    private val logger = LoggerFactory.getLogger("PenguinClient")
+/**
+ * 配置门面，对齐 BDS 版 config.js 的键名与默认值。
+ * 使用点号展平的 Map 内部存储，对外暴露强类型属性。
+ */
+class PenguinConfig private constructor(private val raw: MutableMap<String, Any?>) {
 
-    private val configFile: File
-        get() = FabricLoader.getInstance().configDir.resolve("penguin-client.json").toFile()
+    // ---- bot ----
+    val botAppId: String get() = getString("bot.app-id", "")
+    val botSecret: String get() = getString("bot.secret", "")
+    val botName: String get() = getString("bot.name", "HuHoBot")
+    val botGroups: List<String> get() = getList("bot.groups")
+    val serverName: String get() = getString("serverName", "")
 
-    private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
+    // ---- chat-format ----
+    val chatFromGame: String get() = getString("chat-format.from-game", "[游戏] {name}: {message}")
+    val chatFromGroup: String get() = getString("chat-format.from-group", "[QQ] {name}: {message}")
+    val chatPostChat: Boolean get() = getBool("chat-format.post-chat", true)
+    val chatStartWith: String get() = getString("chat-format.start-with", "")
 
-    fun load() {
-        if (!configFile.exists()) {
-            save()
-            logger.info("已创建默认配置文件: ${configFile.absolutePath}")
-            return
-        }
+    // ---- whitelist ----
+    val whitelistAddCmd: String get() = getString("whitelist.add-command", "whitelist add {name}")
+    val whitelistDelCmd: String get() = getString("whitelist.del-command", "whitelist remove {name}")
 
-        try {
-            val loadedConfig = gson.fromJson(configFile.readText(), PenguinConfig::class.java)
-            this.enabled = loadedConfig.enabled
-            this.chatPrefix = loadedConfig.chatPrefix
-            this.showQQMessages = loadedConfig.showQQMessages
-            this.showJoinLeave = loadedConfig.showJoinLeave
-            this.messageFormat = loadedConfig.messageFormat
-            this.filters = loadedConfig.filters
+    // ---- filter ----
+    val filterRegex: List<String> get() = getList("filter-regex")
 
-            logger.info("配置文件加载成功")
-        } catch (e: Exception) {
-            logger.error("配置文件加载失败，使用默认配置", e)
-            save()
+    // ---- admin ----
+    val adminMode: String get() = getString("admin.mode", "both")
+    val adminOpenids: List<String> get() = getList("admin.openids")
+
+    // ---- features ----
+    val featureFullAmount: Boolean get() = getBool("features.full-amount", false)
+    val featureMarkdownOnline: Boolean get() = getBool("features.markdown-query-online", true)
+    val featureMarkdownWhitelist: Boolean get() = getBool("features.markdown-whitelist", true)
+
+    // ---- join-leave ----
+    val joinLeaveEnabled: Boolean get() = getBool("join-leave.enabled", true)
+    val joinFormat: String get() = getString("join-leave.join-format", "[{server}] 🟢{name}进入服务器")
+    val leaveFormat: String get() = getString("join-leave.leave-format", "[{server}] 🔴{name}退出服务器")
+
+    // ---- audit (OpenAI 兼容二审) ----
+    val auditBaseUrl: String get() = getString("audit.base-url", "")
+    val auditApiKey: String get() = getString("audit.api-key", "")
+    val auditModel: String get() = getString("audit.model", "gpt-4o-mini")
+
+    // ---- debug ----
+    val debugLogEvents: Boolean get() = getBool("debug.log-events", false)
+
+    /** 某个内置命令是否启用（默认 true）。 */
+    fun isCommandEnabled(name: String): Boolean = getBool("commands.$name", true)
+
+    @Suppress("UNCHECKED_CAST")
+    fun getCustomCommands(): List<Map<String, Any?>> {
+        val v = raw["custom-commands"] ?: return emptyList()
+        return v as? List<Map<String, Any?>> ?: emptyList()
+    }
+
+    // ---- 读取原语 ----
+
+    fun getString(key: String, default: String): String {
+        val v = raw[key] ?: return default
+        return v.toString()
+    }
+
+    fun getBool(key: String, default: Boolean): Boolean {
+        val v = raw[key] ?: return default
+        return when (v) {
+            is Boolean -> v
+            is String -> v.lowercase() in listOf("true", "1", "yes", "on")
+            is Number -> v.toInt() != 0
+            else -> default
         }
     }
 
-    fun save() {
-        try {
-            configFile.parentFile?.mkdirs()
-            configFile.writeText(gson.toJson(this))
-            logger.info("配置文件已保存")
-        } catch (e: Exception) {
-            logger.error("配置文件保存失败", e)
-        }
+    @Suppress("UNCHECKED_CAST")
+    fun getList(key: String): List<String> {
+        val v = raw[key] ?: return emptyList()
+        return (v as? List<*>)?.map { it.toString() } ?: emptyList()
     }
 
-    fun reload() {
-        load()
+    companion object {
+        private val COMMAND_NAMES = listOf(
+            "查信息", "查管理", "加管理", "删管理", "管理方式",
+            "添加白名单", "删除白名单", "查白名单", "查在线", "在线服务器",
+            "发信息", "发消息", "执行命令", "执行", "管理员执行",
+            "全量", "认证", "解除认证", "绑定白名单", "解绑白名单", "解除绑定"
+        )
+
+        private val DEFAULTS: Map<String, Any?> = buildMap {
+            put("config-version", CONFIG_VERSION)
+            put("bot.app-id", "")
+            put("bot.secret", "")
+            put("bot.name", "HuHoBot")
+            put("bot.groups", emptyList<String>())
+            put("serverName", "")
+            put("chat-format.from-game", "[游戏] {name}: {message}")
+            put("chat-format.from-group", "[QQ] {name}: {message}")
+            put("chat-format.post-chat", true)
+            put("chat-format.start-with", "")
+            put("whitelist.add-command", "whitelist add {name}")
+            put("whitelist.del-command", "whitelist remove {name}")
+            put("filter-regex", emptyList<String>())
+            put("admin.mode", "both")
+            put("admin.openids", emptyList<String>())
+            put("features.full-amount", false)
+            put("features.markdown-query-online", true)
+            put("features.markdown-whitelist", true)
+            put("join-leave.enabled", true)
+            put("join-leave.join-format", "[{server}] 🟢{name}进入服务器")
+            put("join-leave.leave-format", "[{server}] 🔴{name}退出服务器")
+            put("audit.base-url", "")
+            put("audit.api-key", "")
+            put("audit.model", "gpt-4o-mini")
+            put("custom-commands", emptyList<Any>())
+            put("debug.log-events", false)
+            for (name in COMMAND_NAMES) put("commands.$name", true)
+        }
+
+        fun configFile(): File {
+            val dir = FabricLoader.getInstance().configDir.toFile()
+            return File(dir, "penguin-server.json")
+        }
+
+        fun load(): PenguinConfig {
+            val file = configFile()
+            var nested: Map<String, Any?> = emptyMap()
+            if (file.exists()) {
+                try {
+                    val type = object : TypeToken<Map<String, Any?>>() {}.type
+                    nested = gson.fromJson(file.readText(), type) ?: emptyMap()
+                } catch (e: Exception) {
+                    logger.warn("config 读取失败，使用默认配置：${e.message}")
+                }
+            }
+
+            val flat = flatten(nested, "").toMutableMap()
+
+            // 迁移旧键
+            if ("chat-format.post-prefix" in flat && "chat-format.start-with" !in flat) {
+                flat["chat-format.start-with"] = flat["chat-format.post-prefix"]
+            }
+            flat.remove("chat-format.post-prefix")
+
+            var changed = false
+            for ((k, v) in DEFAULTS) {
+                if (k !in flat) { flat[k] = v; changed = true }
+            }
+
+            val prev = (flat["config-version"] as? Number)?.toInt() ?: 0
+            if (prev != CONFIG_VERSION) { flat["config-version"] = CONFIG_VERSION; changed = true }
+
+            if (changed || !file.exists()) {
+                try {
+                    file.parentFile?.mkdirs()
+                    file.writeText(gson.toJson(nest(flat)) + "\n")
+                    logger.info("配置文件已写入/升级（版本 $prev → $CONFIG_VERSION）")
+                } catch (e: Exception) {
+                    logger.warn("配置写入失败：${e.message}")
+                }
+            }
+
+            return PenguinConfig(flat)
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        private fun flatten(map: Map<String, Any?>, prefix: String): Map<String, Any?> {
+            val out = mutableMapOf<String, Any?>()
+            for ((k, v) in map) {
+                val full = if (prefix.isEmpty()) k else "$prefix.$k"
+                if (v is Map<*, *> && v.isNotEmpty() && v.keys.first() is String) {
+                    out.putAll(flatten(v as Map<String, Any?>, full))
+                } else {
+                    out[full] = v
+                }
+            }
+            return out
+        }
+
+        private fun nest(flat: Map<String, Any?>): Map<String, Any?> {
+            val root = mutableMapOf<String, Any?>()
+            for ((key, value) in flat) {
+                val parts = key.split(".")
+                var node = root
+                for (i in 0 until parts.size - 1) {
+                    val part = parts[i]
+                    @Suppress("UNCHECKED_CAST")
+                    node = node.getOrPut(part) { mutableMapOf<String, Any?>() } as MutableMap<String, Any?>
+                }
+                node[parts.last()] = value
+            }
+            return root
+        }
     }
 }

@@ -4,9 +4,7 @@
   "package": "com.huhobot.penguin.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [],
-  "client": [
-    "ClientPlayNetworkHandlerMixin"
-  ],
+  "client": [],
   "injectors": {
     "defaultRequire": 1
   }

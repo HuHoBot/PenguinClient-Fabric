@@ -1,0 +1,171 @@
+package com.huhobot.penguin
+
+import com.huhobot.penguin.config.PenguinConfig
+import com.huhobot.penguin.qq.QQClient
+import com.huhobot.penguin.command.CommandHandler
+import com.huhobot.penguin.command.PenguinCommand
+import com.huhobot.penguin.filter.TextFilter
+import com.huhobot.penguin.state.BotState
+import com.huhobot.penguin.command.CustomCommands
+import net.fabricmc.api.ModInitializer
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents
+import net.fabricmc.fabric.api.message.v1.ServerMessageEvents
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents
+import net.minecraft.server.MinecraftServer
+import org.slf4j.LoggerFactory
+
+object PenguinServerMod : ModInitializer {
+    const val MOD_ID = "penguin-server-fabric"
+    const val MOD_NAME = "PenguinServer-Fabric"
+
+    val logger = LoggerFactory.getLogger(MOD_NAME)
+
+    lateinit var config: PenguinConfig
+    lateinit var state: BotState
+    lateinit var custom: CustomCommands
+    lateinit var qqClient: QQClient
+    lateinit var commandHandler: CommandHandler
+
+    var server: MinecraftServer? = null
+
+    // 去重缓冲：防止 onChat 和 ServerMessageEvents 重复转发
+    private val recentForwards = ArrayDeque<RecentEntry>(32)
+    private data class RecentEntry(val key: String, val ts: Long)
+
+    override fun onInitialize() {
+        logger.info("$MOD_NAME 正在初始化...")
+
+        config = PenguinConfig.load()
+        state = BotState(config)
+        custom = CustomCommands(config)
+        qqClient = QQClient(config)
+        commandHandler = CommandHandler(config, state, qqClient, custom)
+
+        // 注册 /penguin 命令
+        PenguinCommand.register()
+
+        // 监听群消息 → 分发给命令处理器
+        qqClient.onGroupMessage { msg -> commandHandler.handle(msg) }
+
+        // 服务器启动完毕后启动 QQ 网关
+        ServerLifecycleEvents.SERVER_STARTED.register { srv ->
+            server = srv
+            if (config.botAppId.isNotBlank() && config.botSecret.isNotBlank()) {
+                qqClient.start()
+                logger.info("$MOD_NAME QQ 网关已启动")
+            } else {
+                logger.warn("$MOD_NAME 未配置 bot.app-id / bot.secret，QQ 机器人未启动。请编辑 config/penguin-server.json")
+            }
+        }
+
+        // 服务器停止时关闭网关
+        ServerLifecycleEvents.SERVER_STOPPING.register { _ ->
+            qqClient.stop()
+            logger.info("$MOD_NAME QQ 网关已停止")
+        }
+
+        // 拦截玩家聊天 → 转发到 QQ
+        ServerMessageEvents.CHAT_MESSAGE.register { message, sender, _ ->
+            val startWith = config.chatStartWith
+            val raw = message.content
+            if (startWith.isEmpty() || raw.startsWith(startWith)) {
+                val content = if (startWith.isEmpty()) raw else raw.removePrefix(startWith)
+                forwardGameMessage(sender.name.string, content)
+            }
+        }
+
+        // 玩家进服通知
+        ServerPlayConnectionEvents.JOIN.register { handler, _, _ ->
+            val name = handler.player.name.string
+            if (config.joinLeaveEnabled) {
+                val text = config.joinFormat
+                    .replace("{server}", config.serverName)
+                    .replace("{name}", name)
+                sendToAllGroups(text)
+            }
+        }
+
+        // 玩家退服通知
+        ServerPlayConnectionEvents.DISCONNECT.register { handler, _ ->
+            val name = handler.player.name.string
+            if (config.joinLeaveEnabled) {
+                val text = config.leaveFormat
+                    .replace("{server}", config.serverName)
+                    .replace("{name}", name)
+                sendToAllGroups(text)
+            }
+        }
+
+        logger.info("$MOD_NAME 初始化完成！")
+    }
+
+    /** 游戏消息去重转发：1500ms 窗口内相同 key 只发一次。 */
+    fun forwardGameMessage(playerName: String, content: String) {
+        val key = "$playerName\n$content"
+        val now = System.currentTimeMillis()
+        synchronized(recentForwards) {
+            recentForwards.removeAll { now - it.ts > 1500 }
+            if (recentForwards.any { it.key == key }) return
+            recentForwards.addLast(RecentEntry(key, now))
+        }
+        TextFilter.audit(content, config) { filtered ->
+            sendToAllGroups(formatGameMessage(playerName, filtered))
+        }
+    }
+
+    fun formatGameMessage(name: String, message: String): String =
+        config.chatFromGame.replace("{name}", name).replace("{message}", message)
+
+    fun formatGroupMessage(name: String, message: String): String =
+        config.chatFromGroup.replace("{name}", name).replace("{message}", message)
+
+    /** 广播文字到游戏内所有玩家（QQ → 游戏）。 */
+    fun broadcastToGame(message: String) {
+        val srv = server ?: return
+        srv.execute {
+            try {
+                srv.playerManager.broadcast(net.minecraft.text.Text.literal(message), false)
+            } catch (e: Exception) {
+                logger.error("广播到游戏失败", e)
+            }
+        }
+    }
+
+    /** 执行服务器控制台命令，返回 (success, output)。 */
+    fun runCommand(command: String): Pair<Boolean, String> {
+        val srv = server ?: return Pair(false, "服务器未就绪")
+        return try {
+            val output = StringBuilder()
+            val result = srv.commandManager.dispatcher.execute(
+                command,
+                srv.commandSource.withOutput(net.minecraft.server.command.CommandOutput { msg ->
+                    output.append(msg).append("\n")
+                })
+            )
+            Pair(result >= 1, output.toString().trim())
+        } catch (e: Exception) {
+            Pair(false, e.message ?: "执行失败")
+        }
+    }
+
+    private fun sendToAllGroups(content: String) {
+        for (groupId in config.botGroups) {
+            qqClient.sendGroupMessage(groupId, content)
+        }
+    }
+
+    /** 重载配置并重启网关（对应 BDS 版的 huhobot reload）。 */
+    fun reload() {
+        qqClient.stop()
+        config = PenguinConfig.load()
+        state = BotState(config)
+        custom = CustomCommands(config)
+        qqClient = QQClient(config)
+        commandHandler = CommandHandler(config, state, qqClient, custom)
+        qqClient.onGroupMessage { msg -> commandHandler.handle(msg) }
+        if (config.botAppId.isNotBlank() && config.botSecret.isNotBlank()) {
+            qqClient.start()
+        }
+        logger.info("$MOD_NAME 配置已重载")
+    }
+}
