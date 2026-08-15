@@ -137,12 +137,9 @@ class CommandHandler(
             runGameCommand(ctx, renderCommand(item.command, ctx.params, ctx.groupId, ctx.userId, "run"))
         },
         Cmd("执行命令") { ctx ->
-            val item = custom.resolveRun(ctx.params)
-            if (item == null) {
-                reply(ctx, "未找到可执行的自定义命令：${ctx.params}")
-                return@Cmd
-            }
-            runGameCommand(ctx, renderCommand(item.command, ctx.params, ctx.groupId, ctx.userId, "run"))
+            if (!gateAdmin(ctx)) return@Cmd
+            if (ctx.params.isBlank()) { reply(ctx, "用法：执行命令 <MC命令>"); return@Cmd }
+            runGameCommand(ctx, ctx.params)
         },
         Cmd("管理员执行") { ctx ->
             if (!gateAdmin(ctx)) return@Cmd
