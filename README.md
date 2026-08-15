@@ -13,7 +13,8 @@ HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，�
 ✅ **敏感词过滤** - 正则过滤 + 词库过滤，可选 OpenAI 兼容二审  
 ✅ **自定义命令** - 支持参数占位符的自定义群命令  
 ✅ **全量转发** - 可按群开启非命令消息广播到游戏  
-✅ **中文域名支持** - server-ip 支持中文域名，自动转换为 ASCII
+✅ **中文域名支持** - server-ip 支持中文域名，自动转换为 ASCII  
+✅ **直接执行 MC 命令** - `/执行命令` 管理员可直接执行任意服务器命令
 
 ## 环境要求
 
@@ -21,9 +22,8 @@ HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，�
 
 | Minecraft 版本 | JAR 文件 |
 |---|---|
-| 1.20.1 | `penguin-server-fabric-1.0.6-mc1.20.1.jar` |
-| 1.21.1 | `penguin-server-fabric-1.0.6-mc1.21.1.jar` |
-| 26.1 | `penguin-server-fabric-1.0.6-mc26.1.jar` |
+| 1.20.1 ~ 1.21.x | `penguin-server-fabric-1.1.0-mc1.20.1.jar`（需 Java 21+） |
+| 26.1+ | `penguin-server-fabric-1.1.0-mc26.2.jar`（需 Java 25+） |
 
 - **Fabric Loader**: 0.16.0+
 - **Fabric API**: 对应 MC 版本的最新版
