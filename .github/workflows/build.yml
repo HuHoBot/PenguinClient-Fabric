@@ -9,7 +9,8 @@ on:
     branches: [ "master" ]
 
 jobs:
-  build:
+  build-1_20_1:
+    name: Build MC 1.20.1
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,19 +27,64 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build with Gradle Wrapper
+      - name: Build 1.20.1
         run: ./gradlew build
+
+      - name: Rename jar
+        run: |
+          cd build/libs
+          for f in penguin-server-fabric-*.jar; do
+            [ "$f" = "${f%-sources.jar}" ] && mv "$f" "${f%.jar}-mc1.20.1.jar"
+          done
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: penguin-server-fabric
-          path: build/libs/*.jar
+          name: jar-mc1.20.1
+          path: build/libs/*-mc1.20.1.jar
+          retention-days: 1
+
+  build-26_2:
+    name: Build MC 26.2
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: mc26.2
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          early-access: true
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build 26.2
+        run: ./gradlew build
+
+      - name: Rename jar
+        run: |
+          cd build/libs
+          for f in penguin-server-fabric-*.jar; do
+            [ "$f" = "${f%-sources.jar}" ] && mv "$f" "${f%.jar}-mc26.2.jar"
+          done
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jar-mc26.2
+          path: build/libs/*-mc26.2.jar
           retention-days: 1
 
   release:
     name: Create Release
-    needs: build
+    needs: [ build-1_20_1, build-26_2 ]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
@@ -49,10 +95,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download Artifacts
+      - name: Download 1.20.1 jar
         uses: actions/download-artifact@v4
         with:
-          name: penguin-server-fabric
+          name: jar-mc1.20.1
+          path: artifacts
+
+      - name: Download 26.2 jar
+        uses: actions/download-artifact@v4
+        with:
+          name: jar-mc26.2
           path: artifacts
 
       - name: Get timestamp
@@ -64,10 +116,13 @@ jobs:
         with:
           name: PenguinClient-Fabric ${{ github.ref_name }}
           body: |
-            ## 更新内容
-            查看提交记录了解详细变更。
+            ## 支持版本
+            | 文件 | 适用 Minecraft 版本 |
+            |------|-------------------|
+            | `*-mc1.20.1.jar` | 1.20.1 ~ 1.21.x（需 Java 21+） |
+            | `*-mc26.2.jar` | 26.2（需 Java 25+） |
 
-            ### 构建信息
+            ## 构建信息
             - 构建时间: ${{ steps.get-time.outputs.TIME }}
             - 提交哈希: [${{ github.sha }}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
           files: |
