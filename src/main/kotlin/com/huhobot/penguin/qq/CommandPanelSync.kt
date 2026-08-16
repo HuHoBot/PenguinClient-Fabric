@@ -14,11 +14,6 @@ import javax.net.ssl.HttpsURLConnection
 
 private val logger = LoggerFactory.getLogger("PenguinServer-Fabric/PanelSync")
 
-/**
- * QQ 群指令面板同步器
- *
- * 将命令元数据同步到 QQ 群指令面板，支持增量更新和状态持久化
- */
 class CommandPanelSync(
     private val qqClient: QQClient,
     private val cfg: PenguinConfig,
@@ -32,179 +27,136 @@ class CommandPanelSync(
         loadState()
     }
 
-    /**
-     * 同步命令到 QQ 群指令面板
-     */
     fun syncCommands(commands: List<CommandMetadata>) {
         if (cfg.botGroups.isEmpty()) {
             logger.warn("未配置 bot.groups，跳过指令面板同步")
             return
         }
 
-        if (commands.isEmpty()) {
-            logger.warn("没有可同步的命令")
-            return
+        val limitedCommands = commands.sortedBy { it.name }.take(20)
+        if (commands.size > 20) {
+            logger.warn("命令数量超过限制，仅同步前 20 个")
         }
 
-        // 计算指纹
-        val fingerprint = calculateFingerprint(commands)
+        val fingerprint = calculateFingerprint(limitedCommands)
         if (fingerprint == cachedFingerprint && cachedPanelId != null) {
-            logger.info("指令面板内容未变化，跳过同步 (panel_id=$cachedPanelId)")
+            logger.info("面板内容未变化，跳过同步")
             return
         }
 
         try {
-            // 构建面板数据
-            val panelItems = commands.sortedBy { it.name }.map {
+            val token = qqClient.getAccessTokenSync()
+
+            // 删除旧面板
+            listPanels(token, "group").forEach { panelId ->
+                try {
+                    deletePanel(token, panelId)
+                    logger.info("已删除面板: $panelId")
+                } catch (e: Exception) {
+                    logger.warn("删除失败: ${e.message}")
+                }
+            }
+
+            // 创建新面板（必须包含 type 字段）
+            val items = limitedCommands.map {
                 mapOf(
+                    "type" to "command",
                     "name" to it.name,
                     "desc" to it.description,
                     "only_admin" to it.adminOnly
                 )
             }
 
-            // 调用 QQ API
-            val panelId = if (cachedPanelId == null) {
-                createPanel(panelItems)
-            } else {
-                try {
-                    updatePanel(cachedPanelId!!, panelItems)
-                    cachedPanelId
-                } catch (e: Exception) {
-                    logger.warn("更新面板失败，尝试重新创建: ${e.message}")
-                    createPanel(panelItems)
-                }
-            }
-
-            // 保存状态
+            val panelId = createPanel(token, items)
             cachedPanelId = panelId
             cachedFingerprint = fingerprint
             saveState()
 
-            logger.info("指令面板同步成功: panel_id=$panelId, commands=${commands.size}")
+            logger.info("面板同步成功: $panelId")
         } catch (e: Exception) {
-            logger.error("指令面板同步失败: ${e.message}", e)
+            logger.error("面板同步失败: ${e.message}")
         }
     }
 
-    private fun createPanel(items: List<Map<String, Any>>): String {
-        val token = qqClient.getAccessTokenSync()
-
-        val body = mapOf(
-            "scope" to "group",
-            "target" to "specific",
-            "group_openids" to cfg.botGroups,
-            "panel_definition" to mapOf(
-                "remark" to "HuHoBot Penguin 指令面板",
-                "items" to items
-            )
-        )
-
-        logger.info("创建指令面板: groups=${cfg.botGroups.size}, items=${items.size}")
-
-        val response = postJson(
-            "https://api.bot.qq.com/openapi/panel/create",
-            body,
-            mapOf(
-                "Authorization" to "QQBot $token",
-                "X-Union-Appid" to cfg.botAppId
-            )
-        )
-
-        val panelId = response["panel_id"] as? String
-        if (panelId == null) {
-            logger.error("创建面板失败: 未返回 panel_id, response=$response")
-            throw RuntimeException("创建面板失败: 未返回 panel_id")
-        }
-
-        return panelId
+    private fun listPanels(token: String, scope: String): List<String> {
+        val conn = URL("https://api.bot.qq.com/v2/panels?scope=$scope&limit=50").openConnection() as HttpsURLConnection
+        conn.requestMethod = "GET"
+        conn.setRequestProperty("Authorization", "QQBot $token")
+        conn.setRequestProperty("X-Union-Appid", cfg.botAppId)
+        val resp = conn.inputStream.bufferedReader().readText()
+        @Suppress("UNCHECKED_CAST")
+        val body = gson.fromJson(resp, Map::class.java) as Map<String, Any>
+        return (body["records"] as? List<*>)?.mapNotNull {
+            @Suppress("UNCHECKED_CAST")
+            (it as? Map<String, Any>)?.get("panel_id") as? String
+        } ?: emptyList()
     }
 
-    private fun updatePanel(panelId: String, items: List<Map<String, Any>>) {
-        val token = qqClient.getAccessTokenSync()
+    private fun deletePanel(token: String, panelId: String) {
+        val conn = URL("https://api.bot.qq.com/v2/panels/$panelId").openConnection() as HttpsURLConnection
+        conn.requestMethod = "DELETE"
+        conn.setRequestProperty("Authorization", "QQBot $token")
+        conn.setRequestProperty("X-Union-Appid", cfg.botAppId)
+        conn.responseCode
+    }
 
+    private fun createPanel(token: String, items: List<Map<String, Any>>): String {
         val body = mapOf(
             "scope" to "group",
-            "target" to "specific",
+            "target_type" to "specific",
             "group_openids" to cfg.botGroups,
-            "panel_definition" to mapOf(
-                "remark" to "HuHoBot Penguin 指令面板",
-                "items" to items
-            )
+            "panel" to mapOf("remark" to "HuHoBot Penguin", "items" to items)
         )
 
-        logger.info("更新指令面板: panel_id=$panelId, items=${items.size}")
+        val conn = URL("https://api.bot.qq.com/v2/panels").openConnection() as HttpsURLConnection
+        conn.requestMethod = "POST"
+        conn.doOutput = true
+        conn.setRequestProperty("Content-Type", "application/json")
+        conn.setRequestProperty("Authorization", "QQBot $token")
+        conn.setRequestProperty("X-Union-Appid", cfg.botAppId)
 
-        postJson(
-            "https://api.bot.qq.com/openapi/panel/$panelId/update",
-            body,
-            mapOf(
-                "Authorization" to "QQBot $token",
-                "X-Union-Appid" to cfg.botAppId
-            )
-        )
+        OutputStreamWriter(conn.outputStream, StandardCharsets.UTF_8).use {
+            it.write(gson.toJson(body))
+        }
+
+        val code = conn.responseCode
+        val resp = (if (code in 200..299) conn.inputStream else conn.errorStream).bufferedReader().readText()
+
+        if (code !in 200..299) throw RuntimeException("HTTP $code: $resp")
+
+        @Suppress("UNCHECKED_CAST")
+        return (gson.fromJson(resp, Map::class.java) as Map<String, Any>)["panel_id"] as String
     }
 
     private fun calculateFingerprint(commands: List<CommandMetadata>): String {
-        val content = commands.sortedBy { it.name }
-            .joinToString("|") { "${it.name}:${it.description}:${it.adminOnly}" }
-
-        val md = MessageDigest.getInstance("SHA-256")
-        return md.digest(content.toByteArray())
+        val content = commands.joinToString("|") { "${it.name}:${it.description}:${it.adminOnly}" }
+        return MessageDigest.getInstance("SHA-256").digest(content.toByteArray())
             .joinToString("") { "%02x".format(it) }
     }
 
     private fun loadState() {
         if (!stateFile.exists()) return
-
         try {
-            val props = Properties()
-            stateFile.inputStream().use { props.load(it) }
-            cachedPanelId = props.getProperty("panel_id")?.takeIf { it.isNotBlank() }
-            cachedFingerprint = props.getProperty("fingerprint")?.takeIf { it.isNotBlank() }
-            logger.info("加载面板状态: panel_id=$cachedPanelId")
+            Properties().apply {
+                stateFile.inputStream().use { load(it) }
+                cachedPanelId = getProperty("panel_id")?.trim()?.takeIf { it.isNotEmpty() }
+                cachedFingerprint = getProperty("fingerprint")?.trim()?.takeIf { it.isNotEmpty() }
+            }
         } catch (e: Exception) {
-            logger.warn("加载面板状态失败: ${e.message}")
+            logger.warn("加载状态失败: ${e.message}")
         }
     }
 
     private fun saveState() {
         try {
             stateFile.parentFile?.mkdirs()
-            val props = Properties()
-            props.setProperty("panel_id", cachedPanelId ?: "")
-            props.setProperty("fingerprint", cachedFingerprint ?: "")
-            stateFile.outputStream().use { props.store(it, "HuHoBot QQ Panel State") }
+            Properties().apply {
+                cachedPanelId?.let { setProperty("panel_id", it) }
+                cachedFingerprint?.let { setProperty("fingerprint", it) }
+                stateFile.outputStream().use { store(it, "Panel State") }
+            }
         } catch (e: Exception) {
-            logger.warn("保存面板状态失败: ${e.message}")
+            logger.warn("保存状态失败: ${e.message}")
         }
-    }
-
-    private fun postJson(
-        url: String,
-        body: Map<String, Any>,
-        headers: Map<String, String>
-    ): Map<String, Any> {
-        val conn = URL(url).openConnection() as HttpsURLConnection
-        conn.requestMethod = "POST"
-        conn.doOutput = true
-        conn.connectTimeout = 15000
-        conn.readTimeout = 15000
-        conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-        headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
-
-        val bodyJson = gson.toJson(body)
-        OutputStreamWriter(conn.outputStream, StandardCharsets.UTF_8).use { it.write(bodyJson) }
-
-        val code = conn.responseCode
-        val resp = (if (code in 200..299) conn.inputStream else conn.errorStream)
-            .bufferedReader(StandardCharsets.UTF_8).readText()
-
-        if (code !in 200..299) {
-            throw RuntimeException("HTTP $code: ${resp.take(500)}")
-        }
-
-        @Suppress("UNCHECKED_CAST")
-        return gson.fromJson(resp, Map::class.java) as Map<String, Any>
     }
 }
