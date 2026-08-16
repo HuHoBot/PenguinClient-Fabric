@@ -195,4 +195,4 @@ https://motd.txssb.cn/api/status_img?theme=simple&ip={ip}&port={port}&dark=true&
 
 ## 开源许可
 
-MIT License
+AGPL3.0 License
