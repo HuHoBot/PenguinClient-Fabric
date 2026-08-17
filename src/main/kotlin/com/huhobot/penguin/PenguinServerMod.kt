@@ -111,10 +111,10 @@ object PenguinServerMod : ModInitializer {
 
     /** 游戏消息去重转发：1500ms 窗口内相同 key 只发一次。 */
     fun forwardGameMessage(playerName: String, content: String) {
-+        // post-chat 关闭时，不将游戏内聊天转发至 QQ 群。
-+        if (!config.chatPostChat) {
-+            return
-+        }
+        // post-chat 关闭时，不将游戏内聊天转发至 QQ 群。
+        if (!config.chatPostChat) {
+           return
+        }
         val key = "$playerName\n$content"
         val now = System.currentTimeMillis()
         synchronized(recentForwards) {
