@@ -1,18 +1,19 @@
 # PenguinServer-Fabric
 
 HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，实现 QQ 群与 Minecraft Java 版服务器的双向消息桥接。
-
+ 
 ## 功能特性
-
+✅ **0封号风险** - 使用QQ官方Bot接口 <br>
 ✅ **双向消息转发** - 游戏聊天转发到 QQ 群，QQ 群消息广播到游戏内  
 ✅ **进退服通知** - 玩家进服/退服自动推送到 QQ 群  
-✅ **20+ 内置群命令** - 查在线、白名单管理、管理员管理、MOTD查询等  
+✅ **25+ 内置群命令** - 查在线、白名单管理、管理员管理、MOTD查询、面板同步等  
 ✅ **MOTD 查询** - `/motd <IP:端口>` 查询任意服务器状态，支持图片展示  
 ✅ **全量模式优化** - 自动识别图片、语音、表情、视频等多媒体内容  
 ✅ **白名单自助绑定** - QQ 用户自助绑定游戏名并自动加入白名单  
 ✅ **管理员系统** - 支持 QQ 群管理员 / 手动管理员 / 双重模式  
 ✅ **敏感词过滤** - 正则过滤 + 词库过滤，可选 OpenAI 兼容二审  
 ✅ **自定义命令** - 支持参数占位符的自定义群命令  
+✅ **QQ 指令面板** - 自动同步命令到QQ官方指令面板，支持命令补全  
 ✅ **全量转发** - 可按群开启非命令消息广播到游戏  
 ✅ **中文域名支持** - server-ip 支持中文域名，自动转换为 ASCII  
 ✅ **直接执行 MC 命令** - `/执行命令` 管理员可直接执行任意服务器命令
@@ -34,10 +35,10 @@ HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，�
 ## 安装方法
 
 1. 确保已安装 [Fabric Loader](https://fabricmc.net/use/)
-2. 下载并安装以下依赖模组：
+2. 下载并安装以下依赖模组（对应你的 MC 版本）：
    - [Fabric API](https://modrinth.com/mod/fabric-api)
    - [Fabric Language Kotlin](https://modrinth.com/mod/fabric-language-kotlin)
-3. 将 `penguin-server-fabric-1.0.9-mc26.2.jar` 放入服务器 `mods/` 目录
+3. 将对应版本的 jar 放入服务器 `mods/` 目录
 4. 启动服务器，生成配置文件后关闭
 5. 编辑 `config/penguin-server.json`，填入机器人凭据
 6. 重新启动服务器
@@ -132,6 +133,7 @@ https://motd.txssb.cn/api/status_img?theme=simple&ip={ip}&port={port}&dark=true&
 | 命令 | 权限 | 说明 |
 |------|------|------|
 | `查在线` | 所有人 | 查看在线玩家列表 |
+| `MOTD` | 所有人 | 查看指定服务器的MOTD |
 | `在线服务器` | 所有人 | 查看服务器是否在线 |
 | `查信息` | 所有人 | 查看自己的 OpenID 和认证状态 |
 | `发消息 <内容>` | 所有人 | 广播消息到游戏 |
@@ -147,20 +149,27 @@ https://motd.txssb.cn/api/status_img?theme=simple&ip={ip}&port={port}&dark=true&
 | `查管理` | 管理员 | 查看管理员列表 |
 | `管理方式 <QQ/手动/双重>` | 管理员 | 设置管理员认定方式 |
 | `全量 <开/关>` | 管理员 | 开关全量消息转发到游戏 |
-| `执行 <命令名>` | 所有人 | 执行自定义命令（permission=0） |
+| `同步面板` | 管理员 | 手动同步QQ指令面板 |
+| `刷新` | 管理员 | 手动同步QQ指令面板 |
+| `重载` | 管理员 | 重载配置并重启网关 |
 | `执行命令 <MC命令>` | 管理员 | 直接执行任意服务器命令（如 `执行命令 list`） |
-| `管理员执行 <命令名>` | 管理员 | 执行自定义命令（任意权限） |
 | `认证 <OpenID>` | 管理员 | 认证指定用户 |
 | `解除认证` | 所有人 | 解除自己的认证 |
 
 ## 服务端命令
 
-需要 OP 权限：
+需要 OP 权限（权限等级 4）：
 
 ```
 /penguin reload        重载配置并重启 QQ 网关
 /penguin info          查看模组状态
 /penguin send <消息>   手动向所有配置的群发送消息
+/penguin sync          手动同步QQ指令面板
+
+/huhobot reload        同 /penguin reload
+/huhobot info          同 /penguin info
+/huhobot send <消息>   同 /penguin send
+/huhobot sync          同 /penguin sync
 ```
 
 ## 自定义命令
@@ -196,4 +205,4 @@ https://motd.txssb.cn/api/status_img?theme=simple&ip={ip}&port={port}&dark=true&
 
 ## 开源许可
 
-MIT License
+AGPL3.0 License
