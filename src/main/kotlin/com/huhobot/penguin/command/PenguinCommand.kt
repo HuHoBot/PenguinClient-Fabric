@@ -8,6 +8,7 @@ import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands.argument
 import net.minecraft.commands.Commands.literal
 import net.minecraft.network.chat.Component
+import net.minecraft.SharedConstants
 
 /**
  * 注册 /penguin 和 /huhobot 控制台/OP 命令，对齐 BDS 版 huhobot reload / huhobot info。
@@ -37,13 +38,11 @@ object PenguinCommand {
                 )
                 .then(
                     literal("info").executes { ctx ->
-                        ctx.source.sendSuccess({
-                            Component.literal(
-                                "[PenguinServer] 版本 1.1.3-26.2\n" +
-                                "环境：Fabric 26.2 服务端\n" +
-                                "状态：${if (PenguinServerMod.config.botAppId.isNotBlank()) "已配置" else "未配置（请编辑 config/penguin-server.json）"}"
-                            )
-                        }, false)
+                        val mcVersion = SharedConstants.getCurrentVersion().name()
+                        val status = if (PenguinServerMod.config.botAppId.isNotBlank()) "已配置" else "未配置（请编辑 config/penguin-server.json）"
+                        ctx.source.sendSuccess({ Component.literal("[PenguinServer] 版本 1.1.3") }, false)
+                        ctx.source.sendSuccess({ Component.literal("[PenguinServer] 环境：Fabric $mcVersion 服务端") }, false)
+                        ctx.source.sendSuccess({ Component.literal("[PenguinServer] 状态：$status") }, false)
                         1
                     }
                 )
