@@ -237,12 +237,19 @@ object PenguinServerMod : ModInitializer {
      * 同步命令面板到 QQ
      */
     fun syncCommandPanel() {
-        try {
-            val metadata = commandHandler.getCommandMetadata()
-            logger.info("开始同步 ${metadata.size} 个命令到 QQ 指令面板")
-            panelSync.syncCommands(metadata)
-        } catch (e: Exception) {
-            logger.error("同步指令面板失败", e)
-        }
+        Thread {
+            try {
+                Thread.sleep(3000) // 等待3秒确保网关完全启动
+                val metadata = commandHandler.getCommandMetadata()
+                logger.info("开始同步 ${metadata.size} 个命令到 QQ 指令面板")
+                panelSync.syncCommands(metadata)
+                logger.info("命令面板同步完成")
+            } catch (e: Exception) {
+                logger.error("同步指令面板失败", e)
+            }
+        }.apply {
+            isDaemon = true
+            name = "penguin-panel-sync"
+        }.start()
     }
 }

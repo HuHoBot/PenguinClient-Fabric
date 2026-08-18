@@ -11,20 +11,22 @@ import net.minecraft.network.chat.Component
 import net.minecraft.server.permissions.Permissions
 
 /**
- * 注册 /penguin 控制台/OP 命令，对齐 BDS 版 huhobot reload / huhobot info。
- * 用法：/penguin reload | /penguin info | /penguin send <消息>
+ * 注册 /penguin 和 /huhobot 控制台/OP 命令，对齐 BDS 版 huhobot reload / huhobot info。
+ * 用法：/penguin reload | /penguin info | /penguin send <消息> | /penguin sync
+ *      /huhobot reload | /huhobot info | /huhobot send <消息> | /huhobot sync
  */
 object PenguinCommand {
 
     fun register() {
         CommandRegistrationCallback.EVENT.register { dispatcher, _, _ ->
-            registerCommands(dispatcher)
+            registerCommands(dispatcher, "penguin")
+            registerCommands(dispatcher, "huhobot")
         }
     }
 
-    private fun registerCommands(dispatcher: CommandDispatcher<CommandSourceStack>) {
+    private fun registerCommands(dispatcher: CommandDispatcher<CommandSourceStack>, cmdName: String) {
         dispatcher.register(
-            literal("penguin")
+            literal(cmdName)
                 // 26.x 用 PermissionSet 取代旧的整数权限等级，COMMANDS_OWNER 等价于旧的 level 4
                 .requires { it.permissions().hasPermission(Permissions.COMMANDS_OWNER) }
                 .then(
@@ -38,11 +40,18 @@ object PenguinCommand {
                     literal("info").executes { ctx ->
                         ctx.source.sendSuccess({
                             Component.literal(
-                                "[PenguinServer] 版本 1.1.0-26.2\n" +
+                                "[PenguinServer] 版本 1.1.3-26.2\n" +
                                 "环境：Fabric 26.2 服务端\n" +
                                 "状态：${if (PenguinServerMod.config.botAppId.isNotBlank()) "已配置" else "未配置（请编辑 config/penguin-server.json）"}"
                             )
                         }, false)
+                        1
+                    }
+                )
+                .then(
+                    literal("sync").executes { ctx ->
+                        ctx.source.sendSuccess({ Component.literal("[PenguinServer] 正在同步 QQ 指令面板...") }, false)
+                        PenguinServerMod.syncCommandPanel()
                         1
                     }
                 )
