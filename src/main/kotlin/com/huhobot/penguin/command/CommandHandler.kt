@@ -387,6 +387,21 @@ class CommandHandler(
         reply(ctx, "已设置本群全量转发：${if (enabled) "开" else "关"}")
     }
 
+    @BotCommand("同步面板", "手动同步QQ指令面板", adminOnly = true)
+    private fun cmdSyncPanelAlias(ctx: Ctx) {
+        if (!gateAdmin(ctx)) return
+        reply(ctx, "正在同步指令面板...")
+        Thread {
+            try {
+                PenguinServerMod.syncCommandPanel()
+                Thread.sleep(4000) // 等待同步完成
+                qqClient.sendGroupMessage(ctx.groupId, "指令面板同步成功！", ctx.msgId)
+            } catch (e: Exception) {
+                qqClient.sendGroupMessage(ctx.groupId, "指令面板同步失败：${e.message}", ctx.msgId)
+            }
+        }.start()
+    }
+
     @BotCommand("刷新", "手动同步QQ指令面板", adminOnly = true)
     private fun cmdSyncPanel(ctx: Ctx) {
         if (!gateAdmin(ctx)) return
