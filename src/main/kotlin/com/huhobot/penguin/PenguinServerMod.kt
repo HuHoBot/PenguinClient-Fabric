@@ -2,6 +2,7 @@ package com.huhobot.penguin
 
 import com.huhobot.penguin.config.PenguinConfig
 import com.huhobot.penguin.qq.QQClient
+import com.huhobot.penguin.qq.CommandPanelSync
 import com.huhobot.penguin.command.CommandHandler
 import com.huhobot.penguin.command.PenguinCommand
 import com.huhobot.penguin.filter.TextFilter
@@ -13,6 +14,7 @@ import net.fabricmc.fabric.api.message.v1.ServerMessageEvents
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents
 import net.minecraft.server.MinecraftServer
 import org.slf4j.LoggerFactory
+import java.io.File
 
 object PenguinServerMod : ModInitializer {
     const val MOD_ID = "penguin-server-fabric"
@@ -25,6 +27,7 @@ object PenguinServerMod : ModInitializer {
     lateinit var custom: CustomCommands
     lateinit var qqClient: QQClient
     lateinit var commandHandler: CommandHandler
+    lateinit var panelSync: CommandPanelSync
 
     var server: MinecraftServer? = null
 
@@ -41,6 +44,11 @@ object PenguinServerMod : ModInitializer {
         qqClient = QQClient(config)
         commandHandler = CommandHandler(config, state, qqClient, custom)
 
+        // 初始化面板同步器
+        val configDir = File("config")
+        val stateFile = File(configDir, "penguin-panel-state.properties")
+        panelSync = CommandPanelSync(qqClient, config, stateFile)
+
         // 注册 /penguin 命令
         PenguinCommand.register()
 
@@ -53,6 +61,8 @@ object PenguinServerMod : ModInitializer {
             if (config.botAppId.isNotBlank() && config.botSecret.isNotBlank()) {
                 qqClient.start()
                 logger.info("$MOD_NAME QQ 网关已启动")
+                // 启动后同步命令面板
+                syncCommandPanel()
             } else {
                 logger.warn("$MOD_NAME 未配置 bot.app-id / bot.secret，QQ 机器人未启动。请编辑 config/penguin-server.json")
             }
@@ -208,9 +218,32 @@ object PenguinServerMod : ModInitializer {
         qqClient = QQClient(config)
         commandHandler = CommandHandler(config, state, qqClient, custom)
         qqClient.onGroupMessage { msg -> commandHandler.handle(msg) }
+
+        // 重新初始化面板同步器
+        val configDir = File("config")
+        val stateFile = File(configDir, "penguin-panel-state.properties")
+        panelSync = CommandPanelSync(qqClient, config, stateFile)
+
         if (config.botAppId.isNotBlank() && config.botSecret.isNotBlank()) {
             qqClient.start()
         }
         logger.info("$MOD_NAME 配置已重载")
+    }
+
+    /** 同步命令面板到QQ群 */
+    fun syncCommandPanel() {
+        Thread {
+            try {
+                Thread.sleep(3000) // 等待3秒确保网关完全启动
+                val commands = commandHandler.getCommandMetadata()
+                panelSync.syncCommands(commands)
+                logger.info("命令面板同步完成")
+            } catch (e: Exception) {
+                logger.error("命令面板同步失败", e)
+            }
+        }.apply {
+            isDaemon = true
+            name = "penguin-panel-sync"
+        }.start()
     }
 }
