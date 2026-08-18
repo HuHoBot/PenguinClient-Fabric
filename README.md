@@ -6,13 +6,14 @@ HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，�
 ✅ **0封号风险** - 使用QQ官方Bot接口 <br>
 ✅ **双向消息转发** - 游戏聊天转发到 QQ 群，QQ 群消息广播到游戏内  
 ✅ **进退服通知** - 玩家进服/退服自动推送到 QQ 群  
-✅ **20+ 内置群命令** - 查在线、白名单管理、管理员管理、MOTD查询等  
+✅ **25+ 内置群命令** - 查在线、白名单管理、管理员管理、MOTD查询、面板同步等  
 ✅ **MOTD 查询** - `/motd <IP:端口>` 查询任意服务器状态，支持图片展示  
 ✅ **全量模式优化** - 自动识别图片、语音、表情、视频等多媒体内容  
 ✅ **白名单自助绑定** - QQ 用户自助绑定游戏名并自动加入白名单  
 ✅ **管理员系统** - 支持 QQ 群管理员 / 手动管理员 / 双重模式  
 ✅ **敏感词过滤** - 正则过滤 + 词库过滤，可选 OpenAI 兼容二审  
 ✅ **自定义命令** - 支持参数占位符的自定义群命令  
+✅ **QQ 指令面板** - 自动同步命令到QQ官方指令面板，支持命令补全  
 ✅ **全量转发** - 可按群开启非命令消息广播到游戏  
 ✅ **中文域名支持** - server-ip 支持中文域名，自动转换为 ASCII  
 ✅ **直接执行 MC 命令** - `/执行命令` 管理员可直接执行任意服务器命令
@@ -148,6 +149,9 @@ https://motd.txssb.cn/api/status_img?theme=simple&ip={ip}&port={port}&dark=true&
 | `查管理` | 管理员 | 查看管理员列表 |
 | `管理方式 <QQ/手动/双重>` | 管理员 | 设置管理员认定方式 |
 | `全量 <开/关>` | 管理员 | 开关全量消息转发到游戏 |
+| `同步面板` | 管理员 | 手动同步QQ指令面板 |
+| `刷新` | 管理员 | 手动同步QQ指令面板 |
+| `重载` | 管理员 | 重载配置并重启网关 |
 | `执行命令 <MC命令>` | 管理员 | 直接执行任意服务器命令（如 `执行命令 list`） |
 | `认证 <OpenID>` | 管理员 | 认证指定用户 |
 | `解除认证` | 所有人 | 解除自己的认证 |
@@ -160,6 +164,12 @@ https://motd.txssb.cn/api/status_img?theme=simple&ip={ip}&port={port}&dark=true&
 /penguin reload        重载配置并重启 QQ 网关
 /penguin info          查看模组状态
 /penguin send <消息>   手动向所有配置的群发送消息
+/penguin sync          手动同步QQ指令面板
+
+/huhobot reload        同 /penguin reload
+/huhobot info          同 /penguin info
+/huhobot send <消息>   同 /penguin send
+/huhobot sync          同 /penguin sync
 ```
 
 ## 自定义命令
