@@ -1,7 +1,7 @@
 # PenguinServer-Fabric
 
 HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，实现 QQ 群与 Minecraft Java 版服务器的双向消息桥接。
-
+ 
 ## 功能特性
 ✅ **0封号风险** - 使用QQ官方Bot接口 <br>
 ✅ **双向消息转发** - 游戏聊天转发到 QQ 群，QQ 群消息广播到游戏内  
