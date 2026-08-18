@@ -394,9 +394,40 @@ class CommandHandler(
         Thread {
             try {
                 PenguinServerMod.syncCommandPanel()
+                Thread.sleep(4000) // 等待同步完成
                 qqClient.sendGroupMessage(ctx.groupId, "指令面板同步成功！", ctx.msgId)
             } catch (e: Exception) {
                 qqClient.sendGroupMessage(ctx.groupId, "指令面板同步失败：${e.message}", ctx.msgId)
+            }
+        }.start()
+    }
+
+    @BotCommand("刷新", "手动同步QQ指令面板", adminOnly = true)
+    private fun cmdRefreshPanel(ctx: Ctx) {
+        if (!gateAdmin(ctx)) return
+        reply(ctx, "正在同步指令面板...")
+        Thread {
+            try {
+                PenguinServerMod.syncCommandPanel()
+                Thread.sleep(4000) // 等待同步完成
+                qqClient.sendGroupMessage(ctx.groupId, "指令面板同步成功！", ctx.msgId)
+            } catch (e: Exception) {
+                qqClient.sendGroupMessage(ctx.groupId, "指令面板同步失败：${e.message}", ctx.msgId)
+            }
+        }.start()
+    }
+
+    @BotCommand("重载", "重载配置并重启网关", adminOnly = true)
+    private fun cmdReload(ctx: Ctx) {
+        if (!gateAdmin(ctx)) return
+        reply(ctx, "正在重载配置...")
+        Thread {
+            try {
+                PenguinServerMod.reload()
+                Thread.sleep(4000) // 等待重载完成
+                qqClient.sendGroupMessage(ctx.groupId, "配置重载成功！网关已重启", ctx.msgId)
+            } catch (e: Exception) {
+                qqClient.sendGroupMessage(ctx.groupId, "配置重载失败：${e.message}", ctx.msgId)
             }
         }.start()
     }

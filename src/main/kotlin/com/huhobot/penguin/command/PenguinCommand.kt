@@ -9,22 +9,25 @@ import net.minecraft.server.command.CommandManager.argument
 import net.minecraft.server.command.CommandManager.literal
 import net.minecraft.server.command.ServerCommandSource
 import net.minecraft.text.Text
+import net.minecraft.SharedConstants
 
 /**
- * 注册 /penguin 控制台/OP 命令，对齐 BDS 版 huhobot reload / huhobot info。
- * 用法：/penguin reload | /penguin info | /penguin send <消息>
+ * 注册 /penguin 和 /huhobot 控制台/OP 命令，对齐 BDS 版 huhobot reload / huhobot info。
+ * 用法：/penguin reload | /penguin info | /penguin send <消息> | /penguin sync
+ *      /huhobot reload | /huhobot info | /huhobot send <消息> | /huhobot sync
  */
 object PenguinCommand {
 
     fun register() {
         CommandRegistrationCallback.EVENT.register { dispatcher, _, _ ->
-            registerCommands(dispatcher)
+            registerCommands(dispatcher, "penguin")
+            registerCommands(dispatcher, "huhobot")
         }
     }
 
-    private fun registerCommands(dispatcher: CommandDispatcher<ServerCommandSource>) {
+    private fun registerCommands(dispatcher: CommandDispatcher<ServerCommandSource>, cmdName: String) {
         dispatcher.register(
-            literal("penguin")
+            literal(cmdName)
                 .requires { it.hasPermissionLevel(4) }
                 .then(
                     literal("reload").executes { ctx ->
@@ -35,13 +38,22 @@ object PenguinCommand {
                 )
                 .then(
                     literal("info").executes { ctx ->
-                        ctx.source.sendFeedback({
-                            Text.literal(
-                                "[PenguinServer] 版本 1.0.0\n" +
-                                "环境：Fabric 1.20.1 服务端\n" +
-                                "状态：${if (PenguinServerMod.config.botAppId.isNotBlank()) "已配置" else "未配置（请编辑 config/penguin-server.json）"}"
-                            )
-                        }, false)
+                        val mcVersion = try {
+                            SharedConstants.getGameVersion().name
+                        } catch (e: Exception) {
+                            "1.20.1"
+                        }
+                        val status = if (PenguinServerMod.config.botAppId.isNotBlank()) "已配置" else "未配置（请编辑 config/penguin-server.json）"
+                        ctx.source.sendFeedback({ Text.literal("[PenguinServer] 版本 1.1.3") }, false)
+                        ctx.source.sendFeedback({ Text.literal("[PenguinServer] 环境：Fabric $mcVersion 服务端") }, false)
+                        ctx.source.sendFeedback({ Text.literal("[PenguinServer] 状态：$status") }, false)
+                        1
+                    }
+                )
+                .then(
+                    literal("sync").executes { ctx ->
+                        ctx.source.sendFeedback({ Text.literal("[PenguinServer] 正在同步 QQ 指令面板...") }, false)
+                        PenguinServerMod.syncCommandPanel()
                         1
                     }
                 )
