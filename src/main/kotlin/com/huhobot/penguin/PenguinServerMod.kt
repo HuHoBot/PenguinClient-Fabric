@@ -61,7 +61,7 @@ object PenguinServerMod : ModInitializer {
 
             // 初始化 bStats
             try {
-                val bstats = com.huhobot.penguin.metrics.BStats(33526, MOD_NAME, "1.1.5", config.bstatsEnabled)
+                val bstats = com.huhobot.penguin.metrics.BStats(33526, MOD_NAME, "1.1.5", config)
                 bstats.start()
             } catch (e: Exception) {
                 logger.warn("$MOD_NAME bStats 初始化失败：${e.message}")
