@@ -100,18 +100,16 @@ class QQClient(private val cfg: PenguinConfig) {
         wsConn = null
     }
 
-    /** 独立 watchdog，完全不依赖 MC 服务器线程或时钟。每 60s 检测一次，断线立即重连并刷新 token。 */
+    /** 独立 watchdog，完全不依赖 MC 服务器线程或时钟。每 30s 检测一次，断线立即重连并刷新 token。 */
     private fun startWatchdog() {
         watchdogThread?.interrupt()
         watchdogThread = Thread {
             try {
                 while (!Thread.interrupted() && !stopped.get()) {
-                    Thread.sleep(60_000L)
+                    Thread.sleep(30_000L)
                     if (stopped.get()) break
                     if (wsConn?.isConnected() != true) {
                         if (cfg.debugLogEvents) logger.info("Watchdog：连接已断开，刷新 token 并重连…")
-                        accessToken = null
-                        tokenExpireAt = 0
                         connectAsync(0)
                     }
                 }
@@ -139,6 +137,10 @@ class QQClient(private val cfg: PenguinConfig) {
     }
 
     private fun doConnect() {
+        // 清除旧token，强制刷新
+        accessToken = null
+        tokenExpireAt = 0
+
         val token = getAccessTokenSync()
         if (cfg.debugLogEvents) logger.info("QQ 网关：正式环境 api.bot.qq.com")
 
