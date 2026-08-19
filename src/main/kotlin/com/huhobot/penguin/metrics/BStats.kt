@@ -51,7 +51,8 @@ class BStats(
             "coreCount" to coreCount,
             "service" to mapOf(
                 "id" to pluginId,
-                "pluginVersion" to pluginVersion,
+                "name" to pluginName,
+                "version" to pluginVersion,
                 "customCharts" to listOf<Map<String, Any>>()
             )
         )
