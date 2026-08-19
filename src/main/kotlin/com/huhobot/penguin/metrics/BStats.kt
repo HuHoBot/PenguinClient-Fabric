@@ -15,7 +15,8 @@ private val logger = LoggerFactory.getLogger("BStats")
 class BStats(
     private val pluginId: Int,
     private val pluginName: String,
-    private val pluginVersion: String
+    private val pluginVersion: String,
+    private val enabled: Boolean
 ) {
     private val serverUUID: String
     private val gson = Gson()
@@ -112,6 +113,11 @@ class BStats(
     }
 
     fun start() {
+        if (!enabled) {
+            logger.info("bStats已禁用（可在config中启用）")
+            return
+        }
+
         // 首次上报：随机30-60秒延迟
         val firstDelay = (30000 + Math.random() * 30000).toLong()
 
