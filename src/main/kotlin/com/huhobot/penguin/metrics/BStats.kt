@@ -64,6 +64,10 @@ class BStats(
             val payload = collectData()
             val json = gson.toJson(payload)
 
+            if (config.debugLogEvents) {
+                logger.info("[Debug] bStats上报数据: $json")
+            }
+
             val conn = URL(baseUrl).openConnection() as HttpsURLConnection
             conn.requestMethod = "POST"
             conn.doOutput = true
@@ -77,7 +81,9 @@ class BStats(
 
             val code = conn.responseCode
             if (code == 200) {
-                logger.info("bStats数据上报成功")
+                if (config.debugLogEvents) {
+                    logger.info("[Debug] bStats数据上报成功")
+                }
             } else {
                 logger.warn("bStats上报失败: HTTP $code")
             }
