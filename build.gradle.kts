@@ -14,6 +14,7 @@ base {
 repositories {
     mavenCentral()
     maven("https://maven.fabricmc.net/")
+    maven("https://repo.codemc.io/repository/maven-public/")
 }
 
 dependencies {
@@ -28,6 +29,9 @@ dependencies {
 
     // Gson for config
     include(implementation("com.google.code.gson:gson:2.10.1")!!)
+
+    // bStats
+    include(implementation("org.bstats:bstats-fabric:3.1.0")!!)
 }
 
 tasks {
