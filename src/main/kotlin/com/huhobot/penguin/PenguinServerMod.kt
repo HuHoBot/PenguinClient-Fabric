@@ -58,6 +58,15 @@ object PenguinServerMod : ModInitializer {
         // 服务器启动完毕后启动 QQ 网关
         ServerLifecycleEvents.SERVER_STARTED.register { srv ->
             server = srv
+
+            // 初始化 bStats
+            try {
+                org.bstats.fabric.Metrics(33526)
+                logger.info("$MOD_NAME bStats 统计已启用")
+            } catch (e: Exception) {
+                logger.warn("$MOD_NAME bStats 初始化失败：${e.message}")
+            }
+
             if (config.botAppId.isNotBlank() && config.botSecret.isNotBlank()) {
                 qqClient.start()
                 logger.info("$MOD_NAME QQ 网关已启动")
