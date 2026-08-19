@@ -82,6 +82,7 @@ class BStats(
                 it.write(json)
             }
 
+            val code = conn.responseCode
             if (code == 200) {
                 if (config.debugLogEvents) {
                     logger.info("[Debug] 遥测数据上报成功")
