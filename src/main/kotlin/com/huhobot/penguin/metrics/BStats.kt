@@ -54,8 +54,10 @@ class BStats(
         } catch (e: Exception) { 0 }
 
         val mcVersion = try {
-            net.minecraft.SharedConstants.getGameVersion().name
-        } catch (e: Exception) { "1.20.1" }
+            net.minecraft.SharedConstants.getCurrentVersion().name()
+        } catch (e: Exception) {
+            "26.2"
+        }
 
         val osName = System.getProperty("os.name", "Unknown")
         val osArch = System.getProperty("os.arch", "Unknown")
