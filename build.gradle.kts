@@ -17,6 +17,7 @@ base {
 repositories {
     mavenCentral()
     maven("https://maven.fabricmc.net/")
+    maven("https://repo.codemc.io/repository/maven-public/")
 }
 
 // Minecraft 26.x 起原版不再混淆，Yarn / 官方映射均已停止发布，但 Loom 仍要求
