@@ -49,8 +49,7 @@ class BStats(
 
     private fun collectData(): Map<String, Any> {
         val playerCount = try {
-            // 这里需要从服务器获取在线玩家数，暂时用0
-            0
+            com.huhobot.penguin.PenguinServerMod.server?.currentPlayerCount ?: 0
         } catch (e: Exception) { 0 }
 
         val mcVersion = try {
