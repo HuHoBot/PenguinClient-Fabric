@@ -55,6 +55,8 @@ class BStats(
                 "id" to pluginId,
                 "name" to pluginName,
                 "version" to pluginVersion,
+                "minecraftVersion" to mcVersion,
+                "pluginVersion" to pluginVersion,
                 "customCharts" to listOf<Map<String, Any>>()
             )
         )
