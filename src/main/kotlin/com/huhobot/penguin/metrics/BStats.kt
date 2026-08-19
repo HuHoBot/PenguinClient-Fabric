@@ -63,6 +63,12 @@ class BStats(
             val payload = collectData()
             val json = gson.toJson(payload)
 
+            if (config.debugLogEvents) {
+                logger.info("[Debug] 准备上报数据包：")
+                val prettyGson = com.google.gson.GsonBuilder().setPrettyPrinting().create()
+                logger.info(prettyGson.toJson(payload))
+            }
+
             val conn = URL(baseUrl).openConnection() as HttpsURLConnection
             conn.requestMethod = "POST"
             conn.doOutput = true
@@ -76,12 +82,28 @@ class BStats(
 
             val code = conn.responseCode
             if (code == 200) {
-                logger.info("bStats数据上报成功")
+                if (config.debugLogEvents) {
+                    logger.info("[Debug] 遥测数据上报成功")
+                }
             } else {
                 logger.warn("bStats上报失败: HTTP $code")
+                if (config.debugLogEvents) {
+                    try {
+                        val errorStream = conn.errorStream
+                        if (errorStream != null) {
+                            val error = errorStream.bufferedReader().use { it.readText() }
+                            logger.info("[Debug] 错误响应: $error")
+                        }
+                    } catch (e: Exception) {
+                        logger.info("[Debug] 无法读取错误响应: ${e.message}")
+                    }
+                }
             }
         } catch (e: Exception) {
             logger.warn("bStats上报异常: ${e.message}")
+            if (config.debugLogEvents) {
+                e.printStackTrace()
+            }
         }
     }
 

@@ -72,9 +72,6 @@ class PenguinConfig private constructor(private val raw: MutableMap<String, Any?
     val bstatsEnabled: Boolean get() = getBool("bstats.enabled", true)
     val bstatsUuid: String get() = getString("bstats.uuid", "")
 
-    // ---- bstats ----
-    val bstatsEnabled: Boolean get() = getBool("bstats.enabled", true)
-
     /** 某个内置命令是否启用（默认 true）。 */
     fun isCommandEnabled(name: String): Boolean = getBool("commands.$name", true)
 
