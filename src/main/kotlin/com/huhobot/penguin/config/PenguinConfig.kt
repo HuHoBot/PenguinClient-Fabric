@@ -70,6 +70,10 @@ class PenguinConfig private constructor(private val raw: MutableMap<String, Any?
 
     // ---- bstats ----
     val bstatsEnabled: Boolean get() = getBool("bstats.enabled", true)
+    val bstatsUuid: String get() = getString("bstats.uuid", "")
+
+    // ---- bstats ----
+    val bstatsEnabled: Boolean get() = getBool("bstats.enabled", true)
 
     /** 某个内置命令是否启用（默认 true）。 */
     fun isCommandEnabled(name: String): Boolean = getBool("commands.$name", true)
@@ -144,6 +148,8 @@ class PenguinConfig private constructor(private val raw: MutableMap<String, Any?
             put("audit.model", "gpt-4o-mini")
             put("custom-commands", emptyList<Any>())
             put("debug.log-events", false)
+            put("bstats.enabled", true)
+            put("bstats.uuid", "") // 会在load时自动生成
             for (name in COMMAND_NAMES) put("commands.$name", true)
         }
 
@@ -175,6 +181,12 @@ class PenguinConfig private constructor(private val raw: MutableMap<String, Any?
             var changed = false
             for ((k, v) in DEFAULTS) {
                 if (k !in flat) { flat[k] = v; changed = true }
+            }
+
+            // 自动生成 bstats UUID
+            if (flat["bstats.uuid"] == null || flat["bstats.uuid"].toString().isBlank()) {
+                flat["bstats.uuid"] = java.util.UUID.randomUUID().toString()
+                changed = true
             }
 
             val prev = (flat["config-version"] as? Number)?.toInt() ?: 0

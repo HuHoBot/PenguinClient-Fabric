@@ -16,37 +16,11 @@ class BStats(
     private val pluginId: Int,
     private val pluginName: String,
     private val pluginVersion: String,
-    private val enabled: Boolean
+    private val config: com.huhobot.penguin.config.PenguinConfig
 ) {
-    private val serverUUID: String
+    private val serverUUID: String = config.bstatsUuid
     private val gson = Gson()
     private val baseUrl = "https://bstats.org/api/v2/data/bukkit"
-
-    init {
-        serverUUID = loadOrCreateUUID()
-    }
-
-    private fun loadOrCreateUUID(): String {
-        val uuidFile = File("config/bstats/uuid.txt")
-
-        if (uuidFile.exists()) {
-            try {
-                return uuidFile.readText().trim()
-            } catch (e: Exception) {
-                logger.warn("读取UUID失败: ${e.message}")
-            }
-        }
-
-        val newUUID = UUID.randomUUID().toString()
-        try {
-            uuidFile.parentFile?.mkdirs()
-            uuidFile.writeText(newUUID)
-        } catch (e: Exception) {
-            logger.warn("写入UUID失败: ${e.message}")
-        }
-
-        return newUUID
-    }
 
     private fun collectData(): Map<String, Any> {
         val playerCount = try {
@@ -111,10 +85,13 @@ class BStats(
     }
 
     fun start() {
-        if (!enabled) {
-            logger.info("bStats已禁用（可在config中启用）")
+        if (!config.bstatsEnabled) {
+            logger.info("bStats已禁用")
             return
         }
+
+        logger.info("bStats已启用 - 匿名统计数据将被收集并发送到 https://bstats.org")
+        logger.info("可在config中设置 bstats.enabled: false 来禁用")
 
         // 首次上报：随机30-60秒延迟
         val firstDelay = (30000 + Math.random() * 30000).toLong()
@@ -129,7 +106,5 @@ class BStats(
                 submit()
             }
         }
-
-        logger.info("bStats已启动 (插件ID: $pluginId)")
     }
 }
