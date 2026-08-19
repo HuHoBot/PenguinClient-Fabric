@@ -20,7 +20,7 @@ class BStats(
 ) {
     private val serverUUID: String = config.bstatsUuid
     private val gson = Gson()
-    private val baseUrl = "https://bstats.org/api/v2/data/bukkit"
+    private val baseUrl = "https://bstats.org/api/v2/data/sponge"
 
     private fun collectData(): Map<String, Any> {
         val playerCount = try {
