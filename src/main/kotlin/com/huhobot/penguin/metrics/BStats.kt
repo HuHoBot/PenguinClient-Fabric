@@ -49,7 +49,8 @@ class BStats(
 
     private fun collectData(): Map<String, Any> {
         val playerCount = try {
-            com.huhobot.penguin.PenguinServerMod.server?.currentPlayerCount ?: 0
+            val srv = com.huhobot.penguin.PenguinServerMod.server
+            srv?.playerList?.playerCount ?: 0
         } catch (e: Exception) { 0 }
 
         val mcVersion = try {
