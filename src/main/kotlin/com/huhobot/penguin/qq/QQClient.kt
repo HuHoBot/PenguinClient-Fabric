@@ -137,10 +137,7 @@ class QQClient(private val cfg: PenguinConfig) {
     }
 
     private fun doConnect() {
-        // 清除旧token，强制刷新
-        accessToken = null
-        tokenExpireAt = 0
-
+        // 使用缓存的token，避免频繁刷新触发API限制
         val token = getAccessTokenSync()
         if (cfg.debugLogEvents) logger.info("QQ 网关：正式环境 api.bot.qq.com")
 
