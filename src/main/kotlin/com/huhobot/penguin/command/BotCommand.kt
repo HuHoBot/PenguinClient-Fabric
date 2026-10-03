@@ -19,9 +19,12 @@ annotation class BotCommand(
 
 /**
  * 命令元数据，用于 QQ 面板同步
+ *
+ * [addonSource] 非空表示这条命令来自附属插件，面板排序时内置优先、插件补足。
  */
 data class CommandMetadata(
     val name: String,
     val description: String,
-    val adminOnly: Boolean
+    val adminOnly: Boolean,
+    val addonSource: String? = null
 )

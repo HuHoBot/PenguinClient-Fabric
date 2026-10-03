@@ -57,6 +57,7 @@ object PenguinServerMod : ModInitializer {
 
         // 监听群消息 → 分发给命令处理器
         qqClient.onGroupMessage { msg -> commandHandler.handle(msg) }
+        registerQqEventListeners(qqClient)
 
         // 加载附属插件（此时 commandHandler 已就绪，插件注册的命令才能接上分发链）
         AddonLoader.loadAll()
@@ -85,6 +86,7 @@ object PenguinServerMod : ModInitializer {
 
         // 服务器停止时关闭网关
         ServerLifecycleEvents.SERVER_STOPPING.register { _ ->
+            com.huhobot.penguin.qr.QrLoginManager.cancel()
             AddonManager.unloadAll()
             qqClient.stop()
             logger.info("$MOD_NAME QQ 网关已停止")
@@ -228,6 +230,84 @@ object PenguinServerMod : ModInitializer {
     /** 附属插件用：向所有已配置 QQ 群发文本。 */
     fun sendTextToAllGroups(content: String) = sendToAllGroups(content)
 
+    /**
+     * 挂群成员 / 入群申请 / 互动事件监听。
+     *
+     * 交互事件必须在 5 秒内 [QQClient.respondInteraction] 回执，否则 QQ 记为无响应；
+     * 面板按钮由 [commandHandler] 消化，其余仅回 SUCCESS。
+     */
+    private fun registerQqEventListeners(client: QQClient) {
+        client.onMemberJoin { evt ->
+            if (config.groupMemberEventToGame) {
+                val name = evt.username ?: evt.userId
+                broadcastToGame("[QQ]🟢$name 加入 QQ 群")
+            }
+        }
+        client.onMemberLeave { evt ->
+            if (config.groupMemberEventToGame) {
+                val name = evt.username ?: evt.userId
+                broadcastToGame("[QQ]🔴$name 退出 QQ 群")
+            }
+        }
+        client.onJoinRequest { evt ->
+            val name = evt.username ?: evt.userId
+            if (config.groupJoinRequestToGame) {
+                broadcastToGame("[QQ]📝$name 申请加入 QQ 群")
+            }
+            logger.info("收到入群申请：群 ${evt.groupId} 用户 $name${evt.riskTips?.let { "（风险提示：$it）" } ?: ""}")
+        }
+        client.onInteraction { evt ->
+            if (!client.respondInteractionNow(evt.id, com.huhobot.penguin.qq.InteractionCode.SUCCESS)) {
+                logger.warn("互动事件回执失败：${evt.id}")
+            }
+            commandHandler.handleInteraction(evt)
+        }
+    }
+
+    /**
+     * 启动 QQ 机器人扫码绑定。绑定成功后写回配置并重启网关。
+     *
+     * @return false 表示已有扫码会话在进行
+     */
+    fun startQrBind(feedback: (String) -> Unit = {}): Boolean {
+        val started = com.huhobot.penguin.qr.QrLoginManager.start { credentials ->
+            logger.info("扫码绑定成功，正在写入配置…")
+            val ok = saveCredentials(credentials)
+            feedback(
+                if (ok) "扫码绑定成功，已写入配置，正在重连QQ 网关…"
+                else "扫码绑定成功，但写入配置失败：${com.huhobot.penguin.config.PenguinConfig.configFile()}"
+            )
+            if (ok) reload()
+        }
+        feedback(
+            if (started) "已开始扫码绑定流程，请查看服务端控制台输出的二维码"
+            else "已有扫码绑定会话正在进行中"
+        )
+        return started
+    }
+
+    /** 把扫码拿到的凭据写回 penguin-server.json，保留其余配置项。 */
+    private fun saveCredentials(credentials: com.huhobot.penguin.qr.QrCredentials): Boolean = try {
+        val file = com.huhobot.penguin.config.PenguinConfig.configFile()
+        val gson = com.google.gson.GsonBuilder().setPrettyPrinting().create()
+        val root: MutableMap<String, Any?> = if (file.exists()) {
+            val type = object : com.google.gson.reflect.TypeToken<MutableMap<String, Any?>>() {}.type
+            gson.fromJson(file.readText(), type) ?: mutableMapOf()
+        } else {
+            mutableMapOf()
+        }
+        @Suppress("UNCHECKED_CAST")
+        val bot = (root["bot"] as? MutableMap<String, Any?>) ?: mutableMapOf<String, Any?>().also { root["bot"] = it }
+        bot["app-id"] = credentials.appId
+        bot["secret"] = credentials.appSecret
+        file.parentFile?.mkdirs()
+        file.writeText(gson.toJson(root) + "\n")
+        true
+    } catch (e: Exception) {
+        logger.error("写入扫码凭据失败：${e.message}")
+        false
+    }
+
     /** 重载配置并重启网关（对应 BDS 版的 huhobot reload）。 */
     fun reload() {
         // 先卸载附属插件：它们注册的命令挂在旧的 commandHandler 上，
@@ -240,6 +320,7 @@ object PenguinServerMod : ModInitializer {
         qqClient = QQClient(config)
         commandHandler = CommandHandler(config, state, qqClient, custom)
         qqClient.onGroupMessage { msg -> commandHandler.handle(msg) }
+        registerQqEventListeners(qqClient)
 
         // 重新初始化面板同步器
         val configDir = File("config")

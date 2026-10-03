@@ -30,6 +30,9 @@ dependencies {
     // Gson for config
     include(implementation("com.google.code.gson:gson:2.10.1")!!)
 
+    // 扫码绑定：终端渲染二维码
+    include(implementation("com.google.zxing:core:3.5.3")!!)
+
     // 测试：QQ 网关重连行为的回归用例（只连本地 HTTP 桩，不访问腾讯接口）
     testImplementation(platform("org.junit:junit-bom:5.14.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")

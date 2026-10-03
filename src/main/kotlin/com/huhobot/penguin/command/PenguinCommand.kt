@@ -103,6 +103,14 @@ object PenguinCommand {
                                 }
                         )
                 )
+                .then(
+                    literal("bind").executes { ctx ->
+                        PenguinServerMod.startQrBind { msg ->
+                            ctx.source.sendFeedback({ Text.literal("[PenguinServer] $msg") }, false)
+                        }
+                        1
+                    }
+                )
         )
     }
 }

@@ -14,6 +14,9 @@ import javax.net.ssl.HttpsURLConnection
 
 private val logger = LoggerFactory.getLogger("PenguinServer-Fabric/PanelSync")
 
+/** QQ 群指令面板硬上限。 */
+private const val PANEL_MAX_ITEMS = 20
+
 class CommandPanelSync(
     private val qqClient: QQClient,
     private val cfg: PenguinConfig,
@@ -43,10 +46,11 @@ class CommandPanelSync(
             return
         }
 
-        val limitedCommands = commands.sortedBy { it.name }.take(20)
-        if (commands.size > 20) {
-            logger.warn("命令数量超过限制，仅同步前 20 个")
+        val candidates = eligiblePanelCommands(commands)
+        if (candidates.size > PANEL_MAX_ITEMS) {
+            logger.warn("命令数量 ${candidates.size} 超过面板上限 $PANEL_MAX_ITEMS，仅同步前 $PANEL_MAX_ITEMS 个")
         }
+        val limitedCommands = candidates.take(PANEL_MAX_ITEMS)
 
         val fingerprint = calculateFingerprint(limitedCommands)
         if (fingerprint == cachedFingerprint && cachedPanelId != null) {
@@ -86,6 +90,19 @@ class CommandPanelSync(
         } catch (e: Exception) {
             logger.error("面板同步失败: ${e.message}")
         }
+    }
+
+    /**
+     * 面板候选命令：对齐主仓库 MenuManager 的排序策略。
+     *
+     * 内置命令优先、附属插件命令补足——纯按名称排序会让插件命令被整段挤掉
+     * （内置已 40+ 条，上限 20）。同名的插件命令直接丢弃。
+     */
+    private fun eligiblePanelCommands(commands: List<CommandMetadata>): List<CommandMetadata> {
+        val builtin = commands.filter { !it.addonSource.isNullOrBlank() }
+        val addon = commands.filter { !it.addonSource.isNullOrBlank() }
+        val builtinNames = builtin.mapTo(mutableSetOf()) { it.name }
+        return (builtin + addon.filter { it.name !in builtinNames }).sortedBy { it.name }
     }
 
     private fun listPanels(token: String, scope: String): List<String> {
