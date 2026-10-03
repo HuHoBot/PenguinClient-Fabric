@@ -6,7 +6,7 @@ HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，�
 ✅ **0封号风险** - 使用QQ官方Bot接口 <br>
 ✅ **双向消息转发** - 游戏聊天转发到 QQ 群，QQ 群消息广播到游戏内  
 ✅ **进退服通知** - 玩家进服/退服自动推送到 QQ 群  
-✅ **25+ 内置群命令** - 查在线、白名单管理、管理员管理、MOTD查询、面板同步等  
+✅ **40+ 内置群命令** - 查在线、白名单管理、管理员管理、MOTD查询、群管理、面板同步等  
 ✅ **MOTD 查询** - `/motd <IP:端口>` 查询任意服务器状态，支持图片展示  
 ✅ **全量模式优化** - 自动识别图片、语音、表情、视频等多媒体内容  
 ✅ **白名单自助绑定** - QQ 用户自助绑定游戏名并自动加入白名单  
@@ -16,7 +16,12 @@ HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，�
 ✅ **QQ 指令面板** - 自动同步命令到QQ官方指令面板，支持命令补全  
 ✅ **全量转发** - 可按群开启非命令消息广播到游戏  
 ✅ **中文域名支持** - server-ip 支持中文域名，自动转换为 ASCII  
-✅ **直接执行 MC 命令** - `/执行命令` 管理员可直接执行任意服务器命令
+✅ **直接执行 MC 命令** - `/执行命令` 管理员可直接执行任意服务器命令  
+✅ **QQ 群管理** - 禁言、踢人、黑名单、入群审批等 13 个管理接口  
+✅ **群成员事件** - 进群/退群/入群申请实时通知  
+✅ **互动事件** - Markdown 消息按钮，5 秒内响应回执  
+✅ **附属插件** - 往 `config/penguin-addons/` 丢 jar 即可扩展，支持热重载  
+✅ **扫码绑定** - 终端二维码完成凭据绑定，无需手改配置文件  
 
 ## 环境要求
 
@@ -24,8 +29,8 @@ HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，�
 
 | Minecraft 版本 | JAR 文件 |
 |---|---|
-| 1.20.1 ~ 1.21.x | `penguin-server-fabric-1.1.2-mc1.20.1.jar`（需 Java 21+） |
-| 26.1+ | `penguin-server-fabric-1.1.2-mc26.2.jar`（需 Java 25+） |
+| 1.20.1 ~ 1.21.x | `penguin-server-fabric-*-mc1.20.1.jar`（需 Java 21+） |
+| 26.1+ | `penguin-server-fabric-*-mc26.2.jar`（需 Java 25+） |
 
 - **Fabric Loader**: 0.16.0+
 - **Fabric API**: 对应 MC 版本的最新版
@@ -106,6 +111,17 @@ HuHoBot Penguin 的 Fabric 服务端模组，直连 QQ 官方机器人网关，�
 | `motd.use-markdown` | `/查在线` 是否使用 Markdown 格式（true/false） |
 | `admin.mode` | 管理员模式：`qq`/`manual`/`both` |
 | `audit.base-url` | OpenAI 兼容接口地址（留空则不启用 AI 二审） |
+| `qq.intents` | QQ 网关订阅位。`0` = 按 `intents-auto` 自动决定；填具体数字则原样使用 |
+| `qq.intents-auto` | `true`（默认）= 自动订阅群消息 + 群成员事件 + 互动事件；`false` = 只订阅群消息 |
+| `group-event.to-game` | 群成员进退群事件是否转发到游戏内 |
+| `group-event.join-request-to-game` | 入群申请事件是否转发到游戏内 |
+| `group-api.admin-only` | 群管理命令是否仅限管理员（默认 `true`） |
+
+> **入群申请事件需要机器人在群里也是管理员**，否则 QQ 不会下发 `GROUP_JOIN_REQUEST`，即使 intents 开了也收不到。
+
+### 附属插件配置
+
+插件目录固定为 `config/penguin-addons/`，不支持自定义路径。无额外配置项。
 
 ### MOTD 图片配置
 
@@ -156,6 +172,70 @@ https://motd.txssb.cn/api/status_img?theme=simple&ip={ip}&port={port}&dark=true&
 | `认证 <OpenID>` | 管理员 | 认证指定用户 |
 | `解除认证` | 所有人 | 解除自己的认证 |
 
+### 群管理命令
+
+需要群管理员身份（且机器人本身得有管理权限）。
+
+| 命令 | 说明 |
+|------|------|
+| `群信息` | 查看本群名称、成员数、机器人入群与闭麦状态 |
+| `群成员` | 查看群成员列表 |
+| `查成员 <OpenID>` | 查询指定成员的入群时间、消息数 |
+| `禁言 <分钟>` | 全群禁言，`0` 为解除。上限 30 天 |
+| `踢人 <OpenID>` | 把成员移出本群 |
+| `入群申请` | 列出待处理的入群申请 |
+| `同意入群 <OpenID>` | 同意入群 |
+| `拒绝入群 <OpenID>` | 拒绝入群 |
+| `群黑名单` | 查看本群黑名单 |
+| `拉黑 <OpenID>` | 加入黑名单 |
+| `移出黑名单 <OpenID>` | 移出黑名单 |
+| `撤回` | 撤回触发该条命令的消息（受 QQ 的 2 分钟窗口限制） |
+| `扫码绑定` | 终端显示二维码，扫码完成凭据绑定 |
+
+### 附属插件命令
+
+| 命令 | 权限 | 说明 |
+|------|------|------|
+| `附属插件` | 所有人 | 列出已加载的附属插件及其命令 |
+| `重载插件` | 管理员 | 重新加载 `config/penguin-addons/` 下的所有 jar |
+
+## 附属插件
+
+往 `config/penguin-addons/` 丢一个 jar 就能扩展功能，不需要放进 `mods/`。
+
+仓库里的 [`sample-addon/`](sample-addon/) 是完整可构建的示例工程（`cd sample-addon && ./gradlew jar`），
+开发文档见 [`ADDON-DEV-GUIDE.md`](ADDON-DEV-GUIDE.md)。
+
+最小示例：
+
+```kotlin
+class MyAddon : AddonProvider {
+    override val meta = Addon(name = "myaddon", version = "1.0.0")
+
+    override fun onLoad(api: AddonApi) {
+        api.registerCommand("你好", "打招呼") { ctx ->
+            ctx.reply("你好，${ctx.displayName}")
+        }
+    }
+}
+```
+
+入口类在 jar 根目录的 `penguin-addon.json` 里声明：
+
+```json
+{ "mainClass": "你的包名.你的类名" }
+```
+
+装好后 QQ 群发 `重载插件`，或控制台 `/penguin addons reload`。
+
+几个规则：
+
+- 内置命令优先，插件不能覆盖已有命令（`registerCommand` 返回 `false`）
+- 命令名匹配按长度降序，`添加白名单` 不会被 `添加` 抢先
+- 每条插件命令会同步到 QQ 指令面板，但面板上限 20 项，排序是**内置优先、插件补足**；
+  插件命令多于剩余槽位时会被挤出面板，但仍能手动发命令调用
+- 1.20.1 与 26.2 两个分支的 API 签名相同，同一份插件代码可以原样跑两边
+
 ## 服务端命令
 
 需要 OP 权限（权限等级 4）：
@@ -165,11 +245,10 @@ https://motd.txssb.cn/api/status_img?theme=simple&ip={ip}&port={port}&dark=true&
 /penguin info          查看模组状态
 /penguin send <消息>   手动向所有配置的群发送消息
 /penguin sync          手动同步QQ指令面板
+/penguin addons        列出已加载的附属插件
+/penguin addons reload 重载附属插件
 
-/huhobot reload        同 /penguin reload
-/huhobot info          同 /penguin info
-/huhobot send <消息>   同 /penguin send
-/huhobot sync          同 /penguin sync
+/huhobot <子命令>      同 /penguin <子命令>
 ```
 
 ## 自定义命令
