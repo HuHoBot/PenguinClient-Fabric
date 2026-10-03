@@ -155,8 +155,12 @@ object AddonLoader {
      *
      * 优先读 `penguin-addon.json` 里声明的 mainClass，找不到再退回全量扫描。
      */
-    private fun findAddonClass(cl: ClassLoader, jar: File): Class<*>? {
-        findDeclaredMainClass(cl, jar)?.let { return runCatching { cl.loadClass(it) }.getOrNull() }
+    internal fun findAddonClass(cl: ClassLoader, jar: File): Class<*>? {
+        // 注意：声明的 mainClass 加载失败时不能直接返回 null，必须继续往下走全量扫描
+        findDeclaredMainClass(cl, jar)?.let { declared ->
+            runCatching { cl.loadClass(declared) }.getOrNull()?.let { return it }
+            logger.warn("${jar.name} 声明的 mainClass $declared 不存在，回退全量扫描")
+        }
 
         JarFile(jar).use { jf ->
             val candidates = jf.entries().asSequence()

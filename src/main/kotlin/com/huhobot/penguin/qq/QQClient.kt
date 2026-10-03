@@ -3,12 +3,12 @@ package com.huhobot.penguin.qq
 import com.huhobot.penguin.config.PenguinConfig
 import org.slf4j.LoggerFactory
 import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import javax.net.ssl.HttpsURLConnection
 
 private val logger = LoggerFactory.getLogger("PenguinServer-Fabric/QQClient")
 
@@ -128,7 +128,12 @@ private const val MAX_BUTTON_LABEL = 12
  * QQ 开放平台 WebSocket 网关客户端，对齐 BDS 版 qqclient.js。
  * 使用 Java 标准库的 SSLSocket + 自实现 RFC6455 WebSocket 层（WsConnection）。
  */
-class QQClient(private val cfg: PenguinConfig) {
+class QQClient(
+    private val cfg: PenguinConfig,
+    private val tokenUrl: String = "https://bots.qq.com/app/getAppAccessToken",
+    private val apiBase: String = "https://api.bot.qq.com",
+    private val gatewayUrl: String = "$apiBase/gateway"
+) {
 
     private val stopped = AtomicBoolean(true)
     private var groupMessageListener: ((GroupMessage) -> Unit)? = null
@@ -193,7 +198,7 @@ class QQClient(private val cfg: PenguinConfig) {
     }
 
     /** 群管理 REST 客户端，token 由本类提供。 */
-    fun groupApi(): GroupApi = GroupApi(cfg, { getAccessTokenSync() })
+    fun groupApi(): GroupApi = GroupApi(cfg, { getAccessTokenSync() }, apiBase)
 
     fun start() {
         stopped.set(false)
@@ -254,14 +259,14 @@ class QQClient(private val cfg: PenguinConfig) {
     private fun doConnect() {
         // 使用缓存的token，避免频繁刷新触发API限制
         val token = getAccessTokenSync()
-        if (cfg.debugLogEvents) logger.info("QQ 网关：正式环境 api.bot.qq.com")
+        if (cfg.debugLogEvents) logger.info("QQ 网关：$gatewayUrl")
 
-        val gatewayUrl = fetchGatewayUrl(token)
-        if (gatewayUrl.isNullOrBlank()) throw IllegalStateException("网关地址为空")
-        if (cfg.debugLogEvents) logger.info("网关地址：$gatewayUrl")
+        val gwUrl = fetchGatewayUrl(token)
+        if (gwUrl.isNullOrBlank()) throw IllegalStateException("网关地址为空")
+        if (cfg.debugLogEvents) logger.info("网关地址：$gwUrl")
 
         reconnectAttempt = 0
-        openSocket(gatewayUrl, token)
+        openSocket(gwUrl, token)
     }
 
     private fun openSocket(url: String, token: String) {
@@ -512,7 +517,7 @@ class QQClient(private val cfg: PenguinConfig) {
     private fun refreshToken(): String {
         if (cfg.debugLogEvents) logger.info("正在获取 access_token…")
         val body = """{"appId":"${cfg.botAppId}","clientSecret":"${cfg.botSecret}"}"""
-        val resp = postJson("https://bots.qq.com/app/getAppAccessToken", body, emptyMap())
+        val resp = postJson(tokenUrl, body, emptyMap())
         val token = resp["access_token"] as? String
             ?: throw IllegalStateException("token 接口未返回 access_token：${jsonStringify(resp)}")
         val expiresIn = ((resp["expires_in"] as? Number)?.toLong() ?: 7200L).let {
@@ -670,7 +675,7 @@ class QQClient(private val cfg: PenguinConfig) {
             val token = getAccessTokenSync()
             try {
                 postJson(
-                    "https://api.bot.qq.com/v2/groups/$id/messages",
+                    "$apiBase/v2/groups/$id/messages",
                     jsonStringify(bodyMap),
                     mapOf(
                         "Authorization" to "QQBot $token",
@@ -709,7 +714,7 @@ class QQClient(private val cfg: PenguinConfig) {
             if (msgId != null) bodyMap["msg_id"] = msgId
 
             postJson(
-                "https://api.bot.qq.com/v2/groups/$id/messages",
+                "$apiBase/v2/groups/$id/messages",
                 jsonStringify(bodyMap),
                 mapOf(
                     "Authorization" to "QQBot $token",
@@ -740,7 +745,7 @@ class QQClient(private val cfg: PenguinConfig) {
 
         if (cfg.debugLogEvents) logger.info("上传请求：$uploadBody")
         val resp = postJson(
-            "https://api.bot.qq.com/v2/groups/$id/files",
+            "$apiBase/v2/groups/$id/files",
             uploadBody,
             mapOf(
                 "Authorization" to "QQBot $token",
@@ -766,19 +771,19 @@ class QQClient(private val cfg: PenguinConfig) {
     // ---- 撤回 / 互动响应 ----
 
     private fun deleteMessage(groupId: String, messageId: String) {
-        val url = "https://api.bot.qq.com/v2/groups/${java.net.URLEncoder.encode(groupId, "UTF-8")}" +
+        val url = "$apiBase/v2/groups/${java.net.URLEncoder.encode(groupId, "UTF-8")}" +
             "/messages/${java.net.URLEncoder.encode(messageId, "UTF-8")}"
         requestWithToken("DELETE", url, null)
     }
 
     private fun putInteraction(interactionId: String, code: Int) {
-        val url = "https://api.bot.qq.com/interactions/${java.net.URLEncoder.encode(interactionId, "UTF-8")}"
+        val url = "$apiBase/interactions/${java.net.URLEncoder.encode(interactionId, "UTF-8")}"
         requestWithToken("PUT", url, mapOf("code" to code))
     }
 
     private fun requestWithToken(method: String, url: String, body: Map<String, Any?>?): Map<String, Any?> {
         val token = getAccessTokenSync()
-        val conn = URL(url).openConnection() as HttpsURLConnection
+        val conn = URL(url).openConnection() as HttpURLConnection
         conn.requestMethod = method
         conn.connectTimeout = 15000
         conn.readTimeout = 15000
@@ -828,14 +833,14 @@ class QQClient(private val cfg: PenguinConfig) {
 
     private fun fetchGatewayUrl(token: String): String? {
         val resp = getJson(
-            "https://api.bot.qq.com/gateway",
+            gatewayUrl,
             mapOf("Authorization" to "QQBot $token", "X-Union-Appid" to cfg.botAppId)
         )
         return resp["url"] as? String
     }
 
     private fun getJson(url: String, headers: Map<String, String>): Map<String, Any?> {
-        val conn = URL(url).openConnection() as HttpsURLConnection
+        val conn = URL(url).openConnection() as HttpURLConnection
         conn.requestMethod = "GET"
         conn.connectTimeout = 15000
         conn.readTimeout = 15000
@@ -848,7 +853,7 @@ class QQClient(private val cfg: PenguinConfig) {
     }
 
     private fun postJson(url: String, body: String, headers: Map<String, String>): Map<String, Any?> {
-        val conn = URL(url).openConnection() as HttpsURLConnection
+        val conn = URL(url).openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
         conn.doOutput = true
         conn.connectTimeout = 15000
