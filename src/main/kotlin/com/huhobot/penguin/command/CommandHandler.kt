@@ -637,19 +637,33 @@ class CommandHandler(
         val openid = ctx.params.trim().split(Regex("\\s+")).firstOrNull().orEmpty()
         if (openid.isEmpty()) { reply(ctx, "用法：同意入群 <OpenID>"); return }
         runGroupApi(ctx, "同意入群") { api ->
-            api.approveJoinRequest(ctx.groupId, openid)
-            "已同意 $openid 入群"
+            // join_request_id 是必填，但用户只会在群里看到 openid，
+            // 只能回查一次列表按openid 匹配。
+            val req = api.listJoinRequests(ctx.groupId, pending = true)
+                .firstOrNull { it.memberOpenid.equals(openid, ignoreCase = true) }
+            if (req == null) "没有找到 $openid 的待处理申请"
+            else {
+                api.approveJoinRequest(ctx.groupId, openid, req.requestId)
+                "已同意 ${req.username ?: openid} 入群"
+            }
         }
     }
 
     @BotCommand("拒绝入群", "拒绝指定成员入群", adminOnly = true)
     private fun cmdRejectJoin(ctx: Ctx) {
         if (!gateGroupApi(ctx)) return
-        val openid = ctx.params.trim().split(Regex("\\s+")).firstOrNull().orEmpty()
-        if (openid.isEmpty()) { reply(ctx, "用法：拒绝入群 <OpenID>"); return }
+        val parts = ctx.params.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val openid = parts.firstOrNull().orEmpty()
+        if (openid.isEmpty()) { reply(ctx, "用法：拒绝入群 <OpenID> [理由]"); return }
+        val reason = parts.drop(1).joinToString(" ")
         runGroupApi(ctx, "拒绝入群") { api ->
-            api.rejectJoinRequest(ctx.groupId, openid)
-            "已拒绝 $openid 入群"
+            val req = api.listJoinRequests(ctx.groupId, pending = true)
+                .firstOrNull { it.memberOpenid.equals(openid, ignoreCase = true) }
+            if (req == null) "没有找到 $openid 的待处理申请"
+            else {
+                api.rejectJoinRequest(ctx.groupId, openid, req.requestId, reason)
+                "已拒绝 ${req.username ?: openid} 入群"
+            }
         }
     }
 

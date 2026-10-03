@@ -508,15 +508,15 @@ class QQClient(
                 if (cfg.debugLogEvents) logger.info("收到退群事件：${event.groupId} ${event.userId}")
                 memberLeaveListener?.invoke(event)
             }
-            "GROUP_JOIN_REQUEST" -> {
+            // GROUP_JOIN_REQUEST 的成员信息是平铺在 d 顶层的（member_openid / username），
+// 没有 user 子对象。原先读 d["user"]["id"] 拿到 null 后 ?: return 会把整个事件丢掉。
+"GROUP_JOIN_REQUEST" -> {
                 val d = payload["d"] as? Map<*, *> ?: return
-                val groupId = d["group_openid"] as? String ?: return
-                val user = d["user"] as? Map<*, *> ?: return
                 val event = GroupJoinRequest(
-                    groupId = groupId,
-                    userId = user["id"] as? String ?: return,
-                    username = user["username"] as? String,
-                    applyAt = d["apply_time"] as? String,
+                    groupId = d["group_openid"] as? String ?: return,
+                    userId = d["member_openid"] as? String ?: return,
+                    username = d["username"] as? String,
+                    applyAt = d["apply_at"] as? String,
                     riskTips = d["risk_tips"] as? String
                 )
                 if (cfg.debugLogEvents) logger.info("收到入群申请：${event.groupId} ${event.userId}")
@@ -559,6 +559,12 @@ class QQClient(
         }
 
         val author = d["author"] as? Map<*, *>
+        // 群里有别的机器人（实测腾讯 Q群管家的入群欢迎语就是这样推过来的），
+        // 不排除会把它当用户消息转发进游戏，还可能被当成命令执行。
+        if (author?.get("bot") as? Boolean == true) {
+            if (cfg.debugLogEvents) logger.info("忽略其他机器人消息：group=$groupId")
+            return
+        }
         val message = GroupMessage(
             id = id,
             groupId = groupId,

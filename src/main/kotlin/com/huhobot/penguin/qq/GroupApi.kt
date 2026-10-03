@@ -200,46 +200,65 @@ class GroupApi(
                 if (pending != null) append("&pending=").append(pending)
                 if (!after.isNullOrEmpty()) append("&after=").append(URLEncoder.encode(after, "UTF-8"))
             }
-            val d = get("/v2/groups/$groupOpenid/join_request_list$query")
-            for (raw in d["data"] as? List<*> ?: emptyList<Any>()) {
+            // QQ 实际字段是 list / join_request_id / apply_at / next_cursor（实测 2026-10-03）。
+// 原先读的 data / id / apply_time 全都不存在，导致有申请也显示「没有待处理的」。
+val d = get("/v2/groups/$groupOpenid/join_request_list$query")
+            for (raw in d["list"] as? List<*> ?: emptyList<Any>()) {
                 val m = raw as? Map<*, *> ?: continue
                 out.add(JoinRequest(
-                    requestId = m["id"] as? String ?: continue,
+                    requestId = m["join_request_id"] as? String ?: continue,
                     memberOpenid = m["member_openid"] as? String ?: "",
                     username = m["username"] as? String,
-                    applyAt = m["apply_time"] as? String,
+                    applyAt = m["apply_at"] as? String,
                     riskTips = m["risk_tips"] as? String,
-                    invitedBy = m["invited_by"] as? String,
+                    invitedBy = (m["invited_by"] as? String)?.takeIf { it.isNotBlank() },
                     applySource = m["apply_source"] as? String
                 ))
             }
-            after = d["after"] as? String
+            after = d["next_cursor"] as? String
             if (after.isNullOrEmpty()) break
         }
         return out
     }
 
-    fun approveJoinRequest(groupOpenid: String, memberOpenid: String, reason: String? = null): Boolean {
-        val body = buildMap<String, Any> { if (!reason.isNullOrBlank()) put("reason", reason.take(200)) }
-        post("/v2/groups/$groupOpenid/approval_join_request/$memberOpenid", body)
-        return true
+/**
+ * 入群申请审批。通过与拒绝是**同一个接口**，靠 [approve] 的 op 区分。
+ *
+ * op 和 join_request_id 都是必填——缺任何一个 QQ 都会返回
+ * 40103007「无效或已过期的审批令牌」，这个文案极具误导性，
+ * 跟权限、令牌过期都无关（实测踩过）。
+ */
+fun approveJoinRequest(
+    groupOpenid: String,
+    memberOpenid: String,
+    joinRequestId: String,
+    blacklisted: Boolean = false
+): Boolean {
+    val body = buildMap<String, Any> {
+        put("op", "approve")
+        put("join_request_id", joinRequestId)
+        if (blacklisted) put("add_to_member_blacklist", true)
     }
+    post("/v2/groups/$groupOpenid/approval_join_request/$memberOpenid", body)
+    return true
+}
 
-    fun rejectJoinRequest(groupOpenid: String, memberOpenid: String, reason: String? = null): Boolean {
-        val body = buildMap<String, Any> { if (!reason.isNullOrBlank()) put("reason", reason.take(200)) }
-        post("/v2/groups/$groupOpenid/reject_join_request/$memberOpenid", body)
-        return true
+fun rejectJoinRequest(
+    groupOpenid: String,
+    memberOpenid: String,
+    joinRequestId: String,
+    reason: String? = null,
+    blacklisted: Boolean = false
+): Boolean {
+    val body = buildMap<String, Any> {
+        put("op", "decline")
+        put("join_request_id", joinRequestId)
+        if (!reason.isNullOrBlank()) put("reject_reason", reason.take(200))
+        if (blacklisted) put("add_to_member_blacklist", true)
     }
-
-    /** 查本群加群审批策略。注意此接口**不含** group_openid 路径段。 */
-    fun getJoinApprovalStrategy(groupOpenid: String): String {
-        val d = get("/v2/groups/$groupOpenid/join_approval_strategy")
-        return when ((d["strategy"] as? Number)?.toInt()) {
-            1 -> "自动同意（无需审核）"
-            2 -> "自动拒绝（需管理员审核）"
-            else -> "未知策略"
-        }
-    }
+    post("/v2/groups/$groupOpenid/approval_join_request/$memberOpenid", body)
+    return true
+}
 
     // ---- HTTP ----
 

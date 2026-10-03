@@ -153,21 +153,32 @@ class GroupApiTest {
         assertEquals(1, list.size)
         assertEquals("req-1", list[0].requestId)
         assertEquals("新人和", list[0].username)
-        assertEquals("high", list[0].riskTips)
+        assertEquals("self_apply", list[0].applySource)
+        // apply_at 读成 apply_time 时这行会 null——之前正是这么错的
+        assertEquals("2026-10-03T23:46:16+08:00", list[0].applyAt)
     }
 
+    /**
+ * 通过与拒绝是**同一个接口**，靠 op 区分（原先写成两个路径，实测是错的）。
+ * op 和 join_request_id 都必填，缺了 QQ 返回 40103007「无效或已过期的审批令牌」。
+ */
     @Test
-    fun `同意与拒绝入群路径不同`() {
+    fun `同意入群下发 op 与 join_request_id`() {
         val g = groupApi()
-        g.approveJoinRequest("g1", "u5")
+        g.approveJoinRequest("g1", "u5", "rid-1")
         assertEquals("POST /v2/groups/g1/approval_join_request/u5", api.lastPath)
-        g.rejectJoinRequest("g1", "u5")
-        assertEquals("POST /v2/groups/g1/reject_join_request/u5", api.lastPath)
+        assertTrue(api.lastBody.contains("\"op\":\"approve\""), "缺 op 会报 40103007，实际 body=${api.lastBody}")
+        assertTrue(api.lastBody.contains("\"join_request_id\":\"rid-1\""), "缺 join_request_id 会报 40103007，实际 body=${api.lastBody}")
     }
 
     @Test
-    fun `加群审批策略中文映射`() {
-        assertEquals("自动同意（无需审核）", groupApi().getJoinApprovalStrategy("g1"))
+    fun `拒绝入群走同一路径但 op 为 decline 且理由字段叫 reject_reason`() {
+        val g = groupApi()
+        g.rejectJoinRequest("g1", "u5", "rid-2", "测试理由", blacklisted = true)
+        assertEquals("POST /v2/groups/g1/approval_join_request/u5", api.lastPath)
+        assertTrue(api.lastBody.contains("\"op\":\"decline\""), "实际 body=${api.lastBody}")
+        assertTrue(api.lastBody.contains("\"reject_reason\":\"测试理由\""), "字段名是 reject_reason 而非 reason，实际 body=${api.lastBody}")
+        assertTrue(api.lastBody.contains("\"add_to_member_blacklist\":true"), "实际 body=${api.lastBody}")
     }
 
     // ---- 错误处理 ----
@@ -305,8 +316,9 @@ private class FakeGroupApi {
                 path.matches(Regex(".*/members/[^/]+")) ->
                     send(ex, 200, """{"member_openid":"u1","username":"甲","member_role":"admin","msg_count":42}""")
                 path.endsWith("/member_blacklist") -> send(ex, 200, """{"blacklist":["b1","b2"]}""")
+                // 字段名照 QQ 真实响应写（实测 2026-10-03）：list / join_request_id / apply_at / next_cursor
                 path.contains("/join_request_list") ->
-                    send(ex, 200, """{"data":[{"id":"req-1","member_openid":"m1","username":"新人和","apply_time":"2026-10-03","risk_tips":"high"}],"after":""}""")
+                    send(ex, 200, """{"list":[{"join_request_id":"req-1","member_openid":"m1","username":"新人和","apply_at":"2026-10-03T23:46:16+08:00","apply_source":"self_apply","risk_tips":""}],"next_cursor":""}""")
                 path.endsWith("/join_approval_strategy") -> send(ex, 200, """{"strategy":1}""")
                 path.startsWith("/interactions/") -> send(ex, 200, "{}")
                 else -> send(ex, 200, "{}")
