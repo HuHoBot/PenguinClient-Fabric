@@ -28,8 +28,13 @@ object QqBotQrLogin {
 
     /** 二维码域名：即使 API 切到测试环境，二维码也始终指向线上域名。 */
     private const val HOST = "q.qq.com"
-    private const val CREATE_URL = "https://$HOST/lite/create_bind_task"
-    private const val POLL_URL = "https://$HOST/lite/poll_bind_result"
+
+    /**
+     * 协议端点。仅测试用本地桩覆盖，生产恒为线上地址——
+     * 二维码页面（[connectUrl]）无论如何都指向线上，不受这里影响。
+     */
+    internal var createUrl: String = "https://$HOST/lite/create_bind_task"
+    internal var pollUrl: String = "https://$HOST/lite/poll_bind_result"
 
     private val random = SecureRandom()
 
@@ -57,7 +62,7 @@ object QqBotQrLogin {
     fun createBindTask(httpTimeoutMs: Long = HTTP_TIMEOUT_MS): QrBindTask {
         val keyBase64 = Base64.getEncoder().encodeToString(ByteArray(32).also(random::nextBytes))
         val payload = """{"key":"$keyBase64"}"""
-        val data = postForData(CREATE_URL, payload, httpTimeoutMs, "create_bind_task")
+        val data = postForData(createUrl, payload, httpTimeoutMs, "create_bind_task")
         val taskId = data["task_id"] as? String ?: ""
         if (taskId.isEmpty()) {
             throw QrLoginException("create_bind_task: missing task_id")
@@ -69,7 +74,7 @@ object QqBotQrLogin {
     @Throws(QrLoginException::class)
     fun pollBindResult(taskId: String, httpTimeoutMs: Long = HTTP_TIMEOUT_MS): QrPollResult {
         val payload = """{"task_id":"$taskId"}"""
-        val data = postForData(POLL_URL, payload, httpTimeoutMs, "poll_bind_result")
+        val data = postForData(pollUrl, payload, httpTimeoutMs, "poll_bind_result")
         return QrPollResult(
             status = QrBindStatus.from((data["status"] as? Number)?.toInt() ?: 0),
             // bot_appid 历史上出现过数字与字符串两种形态
@@ -125,7 +130,11 @@ object QqBotQrLogin {
     ): Map<String, Any?> {
         val body = postJson(url, bodyJson, httpTimeoutMs)
         val root: Map<String, Any?> = try {
-            val gson = com.google.gson.Gson()
+            // LONG_OR_DOUBLE：默认策略把所有数字塞成 Double，bot_appid=1905453859
+            // 会变成 1.905453859E9 写进配置，鉴权直接失败（实测踩到）
+            val gson = com.google.gson.GsonBuilder()
+                .setObjectToNumberStrategy(com.google.gson.ToNumberPolicy.LONG_OR_DOUBLE)
+                .create()
             val type = object : com.google.gson.reflect.TypeToken<Map<String, Any?>>() {}.type
             gson.fromJson(body, type) ?: emptyMap()
         } catch (error: Exception) {
