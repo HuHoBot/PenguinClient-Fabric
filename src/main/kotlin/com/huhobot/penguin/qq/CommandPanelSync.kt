@@ -34,23 +34,10 @@ class CommandPanelSync(
      * 作废内存中的面板缓存，强制下次同步真的打接口。
      *
      * 附属插件重载后命令集合一定变了，但指纹可能与上次相同（同一批插件、
-     * 同一批命令），不清缓存会被「内容未变化」直接跳过，QQ 群里留着旧面板。
+     * 同一批命令），不清缓存会被"内容未变化"直接跳过，QQ 群里留着旧面板。
      */
     fun invalidateCache() {
         cachedFingerprint = null
-    }
-
-    /**
-     * 面板候选命令：对齐主仓库 MenuManager 的排序策略。
-     *
-     * 内置命令优先、附属插件命令补足——纯按名称排序会让插件命令被整段挤掉
-     * （内置已 38+ 条，上限 20）。同名的插件命令直接丢弃。
-     */
-    private fun eligiblePanelCommands(commands: List<CommandMetadata>): List<CommandMetadata> {
-        val builtin = commands.filter { it.addonSource.isNullOrBlank() }
-        val addon = commands.filter { !it.addonSource.isNullOrBlank() }
-        val builtinNames = builtin.mapTo(mutableSetOf()) { it.name }
-        return (builtin + addon.filter { it.name !in builtinNames }).sortedBy { it.name }
     }
 
     fun syncCommands(commands: List<CommandMetadata>) {
@@ -74,17 +61,10 @@ class CommandPanelSync(
         try {
             val token = qqClient.getAccessTokenSync()
 
-            // 删除旧面板
-            listPanels(token, "group").forEach { panelId ->
-                try {
-                    deletePanel(token, panelId)
-                    logger.info("已删除面板: $panelId")
-                } catch (e: Exception) {
-                    logger.warn("删除失败: ${e.message}")
-                }
-            }
-
-            // 创建新面板（必须包含 type 字段）
+            // 先创建后删除：面板接口限流 10 QPM，原先 list→delete→create 三个调用
+            // 挤在同一秒，create 会被 QQ 拒掉。而QQ 对超限返回的文案是
+            //「必填字段缺失」(30016)，极具误导性——实测同一份请求体手动打是 OK 的。
+            // 官方上限是一个机器人 20 个面板，创建完再删旧的永远够用。
             val items = limitedCommands.map {
                 mapOf(
                     "type" to "command",
@@ -95,14 +75,39 @@ class CommandPanelSync(
             }
 
             val panelId = createPanel(token, items)
+            logger.info("面板同步成功: $panelId")
+
+            // 新面板到手后再清旧的，避免出现「旧的已删、新的没建成」的空窗
+            listPanels(token, "group").filter { it != panelId }.forEach { oldId ->
+                try {
+                    deletePanel(token, oldId)
+                    logger.info("已删除旧面板: $oldId")
+                } catch (e: Exception) {
+                    logger.warn("删除失败: ${e.message}")
+                }
+            }
+
             cachedPanelId = panelId
             cachedFingerprint = fingerprint
             saveState()
 
-            logger.info("面板同步成功: $panelId")
+            logger.info("面板同步完成: $panelId")
         } catch (e: Exception) {
             logger.error("面板同步失败: ${e.message}")
         }
+    }
+
+    /**
+     * 面板候选命令：对齐主仓库 MenuManager 的排序策略。
+     *
+     * 内置命令优先、附属插件命令补足——纯按名称排序会让插件命令被整段挤掉
+     * （内置已 40+ 条，上限 20）。同名的插件命令直接丢弃。
+     */
+    private fun eligiblePanelCommands(commands: List<CommandMetadata>): List<CommandMetadata> {
+        val builtin = commands.filter { !it.addonSource.isNullOrBlank() }
+        val addon = commands.filter { !it.addonSource.isNullOrBlank() }
+        val builtinNames = builtin.mapTo(mutableSetOf()) { it.name }
+        return (builtin + addon.filter { it.name !in builtinNames }).sortedBy { it.name }
     }
 
     private fun listPanels(token: String, scope: String): List<String> {
