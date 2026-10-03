@@ -24,6 +24,69 @@ data class GroupMessage(
     val attachments: List<Map<*, *>>? = null  // 附件列表（图片等）
 )
 
+/** 成员进群事件。 */
+data class GroupMemberJoin(
+    val groupId: String,
+    val userId: String,
+    val username: String?
+)
+
+/** 成员退群事件。 */
+data class GroupMemberLeave(
+    val groupId: String,
+    val userId: String,
+    val username: String?
+)
+
+/** 入群申请事件。 */
+data class GroupJoinRequest(
+    val groupId: String,
+    val userId: String,
+    val username: String?,
+    val applyAt: String?,
+    val riskTips: String?
+)
+
+/**
+ * 互动事件（面板按钮、快捷菜单）。
+ *
+ * [data] 是 `data.resolved` 原始内容，按钮回调参数都在里面：
+ * `button_id` / `button_data` / `feature_id` / `message_id`。
+ */
+data class InteractionEvent(
+    val id: String,
+    /** 11 = 消息按钮，12 = 单聊快捷菜单。 */
+    val type: Int,
+    /** c2c / group / guild。 */
+    val scene: String?,
+    /** 0 = 频道，1 = 群聊，2 = 单聊。 */
+    val chatType: Int?,
+    val groupId: String?,
+    val userId: String?,
+    val data: Map<*, *>
+)
+
+/** 互动事件响应码，取值对齐官方文档。 */
+object InteractionCode {
+    /** 操作成功。 */
+    const val SUCCESS = 0
+
+    /** 操作失败。 */
+    const val FAILED = 1
+
+    /** 操作过于频繁，稍后再试。 */
+    const val TOO_FREQUENT = 2
+
+    /** 重复操作。 */
+    const val DUPLICATE = 3
+
+    /** 没有权限。 */
+    const val NO_PERMISSION = 4
+
+    /** 仅管理员可操作。 */
+    const val ADMIN_ONLY = 5
+}
+
 private const val OP_DISPATCH = 0
 private const val OP_HEARTBEAT = 1
 private const val OP_IDENTIFY = 2
@@ -33,10 +96,33 @@ private const val OP_HELLO = 10
 private const val OP_HEARTBEAT_ACK = 11
 private const val OP_INVALID_SESSION = 9
 
-private const val INTENTS_GROUP = 1 shl 25
+/**
+ * Intents 位定义，取值对齐 qqpd-bot-java 的 `Intents`。
+ *
+ * 官方要求按需订阅：多勾一位不会多收事件，但没勾就永远收不到。
+ */
+object Intents {
+    /** 群成员进退群 + 入群申请。申请还要求机器人是群管理员。 */
+    const val GROUP_MEMBER_EVENT = 1 shl 24
+
+    /** 群消息 / 群事件基础位。 */
+    const val GROUP = 1 shl 25
+
+    /** 互动事件（面板按钮、快捷菜单）。 */
+    const val INTERACTION = 1 shl 26
+
+    /** 默认开启：群消息 + 群成员事件 + 互动事件。 */
+    const val DEFAULT_GROUP = GROUP or GROUP_MEMBER_EVENT or INTERACTION
+}
+
 private const val TOKEN_REFRESH_LEAD = 60_000L
 private const val MAX_RECONNECT_DELAY = 30_000L
 private const val SEND_GAP_MS = 500L
+
+/** QQ Markdown 键盘限制：单条消息最多 5 个按钮，按钮 id/label 也有长度上限。 */
+private const val MAX_BUTTONS = 5
+private const val MAX_BUTTON_ID = 10
+private const val MAX_BUTTON_LABEL = 12
 
 /**
  * QQ 开放平台 WebSocket 网关客户端，对齐 BDS 版 qqclient.js。
@@ -46,6 +132,16 @@ class QQClient(private val cfg: PenguinConfig) {
 
     private val stopped = AtomicBoolean(true)
     private var groupMessageListener: ((GroupMessage) -> Unit)? = null
+    private var memberJoinListener: ((GroupMemberJoin) -> Unit)? = null
+    private var memberLeaveListener: ((GroupMemberLeave) -> Unit)? = null
+    private var joinRequestListener: ((GroupJoinRequest) -> Unit)? = null
+    private var interactionListener: ((InteractionEvent) -> Unit)? = null
+
+    /**
+     * 每条消息的 seq 序号。QQ 要求带msg_id 回复时 msg_seq 严格递增，
+     * 否则第二次回复会被判为重复消息丢弃。
+     */
+    private val msgSeq = java.util.concurrent.atomic.AtomicInteger(1)
 
     // token 状态
     private var accessToken: String? = null
@@ -79,6 +175,25 @@ class QQClient(private val cfg: PenguinConfig) {
     fun onGroupMessage(listener: (GroupMessage) -> Unit) {
         groupMessageListener = listener
     }
+
+    fun onMemberJoin(listener: (GroupMemberJoin) -> Unit) {
+        memberJoinListener = listener
+    }
+
+    fun onMemberLeave(listener: (GroupMemberLeave) -> Unit) {
+        memberLeaveListener = listener
+    }
+
+    fun onJoinRequest(listener: (GroupJoinRequest) -> Unit) {
+        joinRequestListener = listener
+    }
+
+    fun onInteraction(listener: (InteractionEvent) -> Unit) {
+        interactionListener = listener
+    }
+
+    /** 群管理 REST 客户端，token 由本类提供。 */
+    fun groupApi(): GroupApi = GroupApi(cfg, { getAccessTokenSync() })
 
     fun start() {
         stopped.set(false)
@@ -189,7 +304,11 @@ class QQClient(private val cfg: PenguinConfig) {
             conn.send("""{"op":$OP_RESUME,"d":{"token":"QQBot $token","session_id":"${sessionId}","seq":${lastSeq ?: "null"}}}""")
         } else {
             val platform = System.getProperty("os.name", "unknown")
-            conn.send("""{"op":$OP_IDENTIFY,"d":{"token":"QQBot $token","intents":$INTENTS_GROUP,"shard":[0,1],"properties":{"${'$'}os":"$platform","${'$'}browser":"${cfg.botName} (Fabric)","${'$'}device":"${cfg.botName} (Fabric)"}}}""")
+            val intents = cfg.qqIntents
+            if (cfg.debugLogEvents) {
+                logger.info("Identify intents=$intents（群消息/群成员/互动按配置订阅）")
+            }
+            conn.send("""{"op":$OP_IDENTIFY,"d":{"token":"QQBot $token","intents":$intents,"shard":[0,1],"properties":{"${'$'}os":"$platform","${'$'}browser":"${cfg.botName} (Fabric)","${'$'}device":"${cfg.botName} (Fabric)"}}}""")
         }
     }
 
@@ -280,6 +399,60 @@ class QQClient(private val cfg: PenguinConfig) {
                 val d = payload["d"] as? Map<*, *> ?: return
                 onGroupMessage(d)
             }
+            "GROUP_MEMBER_ADD" -> {
+                val d = payload["d"] as? Map<*, *> ?: return
+                val groupId = d["group_openid"] as? String ?: return
+                val user = d["user"] as? Map<*, *> ?: return
+                val event = GroupMemberJoin(
+                    groupId = groupId,
+                    userId = user["id"] as? String ?: return,
+                    username = user["username"] as? String
+                )
+                if (cfg.debugLogEvents) logger.info("收到进群事件：${event.groupId} ${event.userId}")
+                memberJoinListener?.invoke(event)
+            }
+            "GROUP_MEMBER_REMOVE" -> {
+                val d = payload["d"] as? Map<*, *> ?: return
+                val groupId = d["group_openid"] as? String ?: return
+                val user = d["user"] as? Map<*, *> ?: return
+                val event = GroupMemberLeave(
+                    groupId = groupId,
+                    userId = user["id"] as? String ?: return,
+                    username = user["username"] as? String
+                )
+                if (cfg.debugLogEvents) logger.info("收到退群事件：${event.groupId} ${event.userId}")
+                memberLeaveListener?.invoke(event)
+            }
+            "GROUP_JOIN_REQUEST" -> {
+                val d = payload["d"] as? Map<*, *> ?: return
+                val groupId = d["group_openid"] as? String ?: return
+                val user = d["user"] as? Map<*, *> ?: return
+                val event = GroupJoinRequest(
+                    groupId = groupId,
+                    userId = user["id"] as? String ?: return,
+                    username = user["username"] as? String,
+                    applyAt = d["apply_time"] as? String,
+                    riskTips = d["risk_tips"] as? String
+                )
+                if (cfg.debugLogEvents) logger.info("收到入群申请：${event.groupId} ${event.userId}")
+                joinRequestListener?.invoke(event)
+            }
+            "INTERACTION_CREATE" -> {
+                val d = payload["d"] as? Map<*, *> ?: return
+                val event = InteractionEvent(
+                    id = d["id"] as? String ?: return,
+                    type = (d["type"] as? Number)?.toInt() ?: 0,
+                    scene = d["scene"] as? String,
+                    chatType = (d["chat_type"] as? Number)?.toInt(),
+                    groupId = d["group_openid"] as? String,
+                    userId = (d["group_member_openid"] as? String) ?: (d["user_openid"] as? String),
+                    data = d["data"] as? Map<*, *> ?: emptyMap<Any, Any>()
+                )
+                if (cfg.debugLogEvents) {
+                    logger.info("收到互动事件：id=${event.id} type=${event.type} group=${event.groupId}")
+                }
+                interactionListener?.invoke(event)
+            }
         }
     }
 
@@ -321,6 +494,13 @@ class QQClient(private val cfg: PenguinConfig) {
 
     // ---- access_token ----
 
+    /** 作废本地 token 缓存，下一次取用会强制向 QQ 重新申请。 */
+    @Synchronized
+    private fun invalidateToken() {
+        accessToken = null
+        tokenExpireAt = 0
+    }
+
     @Synchronized
     fun getAccessTokenSync(): String {
         val now = System.currentTimeMillis()
@@ -348,7 +528,7 @@ class QQClient(private val cfg: PenguinConfig) {
     fun sendGroupMessage(groupId: String, content: String, msgId: String? = null) {
         enqueue {
             try {
-                doSendGroupMessage(groupId, content, msgId, 0)
+                doSendGroupMessage(groupId, content, msgId, 0, keyboard = null)
                 if (cfg.debugLogEvents)
                     logger.info("群消息已发送 group=$groupId content=${content.take(100)}")
             } catch (e: Exception) {
@@ -360,7 +540,7 @@ class QQClient(private val cfg: PenguinConfig) {
     fun sendMarkdown(groupId: String, markdownContent: String, msgId: String? = null) {
         enqueue {
             try {
-                doSendGroupMessage(groupId, markdownContent, msgId, 2)
+                doSendGroupMessage(groupId, markdownContent, msgId, 2, keyboard = null)
                 if (cfg.debugLogEvents)
                     logger.info("群 Markdown 已发送 group=$groupId")
             } catch (e: Exception) {
@@ -368,6 +548,82 @@ class QQClient(private val cfg: PenguinConfig) {
             }
         }
     }
+
+    /**
+     * 发送带按钮的 Markdown 消息。
+     *
+     * [buttons] 最多 5 个，每个 `id` 在同一按钮行内唯一；[rowIndex] 从 1 开始。
+     * 用户点击后 QQ 会下发 `INTERACTION_CREATE`，[resolved.button_id] 即这里设的 id。
+     */
+    fun sendMarkdownWithButtons(
+        groupId: String,
+        markdownContent: String,
+        buttons: List<Pair<String, String>>,
+        rowIndex: Int = 1,
+        msgId: String? = null
+    ) {
+        if (buttons.isEmpty()) { sendMarkdown(groupId, markdownContent, msgId); return }
+        if (buttons.size > MAX_BUTTONS) {
+            logger.warn("按钮数 ${buttons.size} 超过上限 $MAX_BUTTONS，已截断")
+        }
+        val keyboard = mapOf(
+            "rows" to listOf(
+                mapOf(
+                    "buttons" to buttons.take(MAX_BUTTONS).map { (id, label) ->
+                        mapOf("id" to id.take(MAX_BUTTON_ID), "label" to label.take(MAX_BUTTON_LABEL))
+                    }
+                )
+            )
+        )
+        enqueue {
+            try {
+                doSendGroupMessage(groupId, markdownContent, msgId, 2, keyboard, rowIndex.coerceAtLeast(1))
+                if (cfg.debugLogEvents) logger.info("群按钮 Markdown 已发送 group=$groupId")
+            } catch (e: Exception) {
+                logger.error("群按钮 Markdown 发送失败 group=$groupId：${e.message}")
+            }
+        }
+    }
+
+    /**
+     * 撤回自己发过的消息。
+     *
+     * QQ 只允许撤回机器人自己在 2 分钟内发出的消息，超时返回错误码。
+     */
+    fun recallMessage(groupId: String, messageId: String) {
+        enqueue {
+            try {
+                deleteMessage(groupId, messageId)
+                if (cfg.debugLogEvents) logger.info("已撤回消息 group=$groupId msg=$messageId")
+            } catch (e: Exception) {
+                logger.error("撤回消息失败 group=$groupId：${e.message}")
+            }
+        }
+    }
+
+    /**
+     * 响应互动事件。必须在收到事件后 5 秒内调用，否则 QQ 判定为无响应。
+     *
+     * 立即返回是否投递成功（不含 HTTP 结果）；需要确认结果用 [respondInteractionNow]。
+     */
+    fun respondInteraction(interactionId: String, code: Int = InteractionCode.SUCCESS): Boolean =
+        enqueue {
+            try {
+                putInteraction(interactionId, code)
+            } catch (e: Exception) {
+                logger.warn("互动事件响应失败 id=$interactionId code=$code：${e.message}")
+            }
+        }
+
+    /** 同步版本的互动响应，供命令处理等需要确认结果的场景使用。 */
+    fun respondInteractionNow(interactionId: String, code: Int = InteractionCode.SUCCESS): Boolean =
+        try {
+            putInteraction(interactionId, code)
+            true
+        } catch (e: Exception) {
+            logger.warn("互动事件响应失败 id=$interactionId code=$code：${e.message}")
+            false
+        }
 
     fun sendGroupMessageWithImage(groupId: String, text: String, imgUrl: String, msgId: String? = null) {
         enqueue {
@@ -381,15 +637,33 @@ class QQClient(private val cfg: PenguinConfig) {
         }
     }
 
-    private fun doSendGroupMessage(groupId: String, content: String, msgId: String?, msgType: Int) {
+    private fun doSendGroupMessage(
+        groupId: String,
+        content: String,
+        msgId: String?,
+        msgType: Int,
+        keyboard: Map<String, Any>?,
+        rowIndex: Int = 1
+    ) {
         val id = java.net.URLEncoder.encode(groupId, "UTF-8")
         val bodyMap = mutableMapOf<String, Any>("msg_type" to msgType)
         if (msgType == 2) {
-            bodyMap["markdown"] = mapOf("content" to content)
+            // markdown 也可能是只读 map（无按钮时用 mapOf），所以统一建成可变再填
+            val markdown = mutableMapOf<String, Any>("content" to content)
+            if (keyboard != null) {
+                markdown["keyboard"] = mapOf("id" to rowIndex)
+                bodyMap["keyboard"] = keyboard
+            }
+            bodyMap["markdown"] = markdown
         } else {
             bodyMap["content"] = content
+            keyboard?.let { bodyMap["keyboard"] = it }
         }
-        if (msgId != null) bodyMap["msg_id"] = msgId
+        if (msgId != null) {
+            bodyMap["msg_id"] = msgId
+            // 带 msg_id 回复时必须带 seq，否则连续两次回复会被 QQ 判为重复
+            bodyMap["msg_seq"] = msgSeq.getAndIncrement()
+        }
 
         // 最多重试一次（token 过期时自动刷新后重发）
         repeat(2) { attempt ->
@@ -481,10 +755,49 @@ class QQClient(private val cfg: PenguinConfig) {
         return fileInfo
     }
 
-    private fun enqueue(task: () -> Unit) {
+    private fun enqueue(task: () -> Unit): Boolean {
         if (!sendQueue.offer(task)) {
             logger.warn("发消息队列已满，丢弃一条")
+            return false
         }
+        return true
+    }
+
+    // ---- 撤回 / 互动响应 ----
+
+    private fun deleteMessage(groupId: String, messageId: String) {
+        val url = "https://api.bot.qq.com/v2/groups/${java.net.URLEncoder.encode(groupId, "UTF-8")}" +
+            "/messages/${java.net.URLEncoder.encode(messageId, "UTF-8")}"
+        requestWithToken("DELETE", url, null)
+    }
+
+    private fun putInteraction(interactionId: String, code: Int) {
+        val url = "https://api.bot.qq.com/interactions/${java.net.URLEncoder.encode(interactionId, "UTF-8")}"
+        requestWithToken("PUT", url, mapOf("code" to code))
+    }
+
+    private fun requestWithToken(method: String, url: String, body: Map<String, Any?>?): Map<String, Any?> {
+        val token = getAccessTokenSync()
+        val conn = URL(url).openConnection() as HttpsURLConnection
+        conn.requestMethod = method
+        conn.connectTimeout = 15000
+        conn.readTimeout = 15000
+        conn.setRequestProperty("Authorization", "QQBot $token")
+        conn.setRequestProperty("X-Union-Appid", cfg.botAppId)
+        if (body != null) {
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            OutputStreamWriter(conn.outputStream, StandardCharsets.UTF_8).use {
+                it.write(jsonStringify(body))
+            }
+        }
+        val code = conn.responseCode
+        val text = (if (code in 200..299) conn.inputStream else conn.errorStream)
+            ?.bufferedReader(StandardCharsets.UTF_8)?.readText().orEmpty()
+        if (code == 401) invalidateToken()
+        if (code !in 200..299) throw RuntimeException("HTTP $code：${text.take(200)}")
+        if (text.isBlank()) return emptyMap()
+        return parseJson(text)
     }
 
     private fun startSendThread() {

@@ -65,6 +65,37 @@ class PenguinConfig private constructor(private val raw: MutableMap<String, Any?
     val auditApiKey: String get() = getString("audit.api-key", "")
     val auditModel: String get() = getString("audit.model", "gpt-4o-mini")
 
+    // ---- QQ 事件订阅 ----
+
+    /**
+     * Identify 时上报的 intents 位掩码。
+     *
+     * 0 表示按 [qqIntentsAuto] 的推荐组合下发；显式给数字则原样使用，
+     * 方便对照官方文档调bit。
+     */
+    private val qqIntentsRaw: Int get() = (raw["qq.intents"] as? Number)?.toInt() ?: 0
+
+    /** 是否按「群消息 + 群成员事件 + 互动事件」的推荐组合订阅。 */
+    val qqIntentsAuto: Boolean get() = getBool("qq.intents-auto", true)
+
+    val qqIntents: Int
+        get() {
+            if (qqIntentsRaw != 0) return qqIntentsRaw
+            if (!qqIntentsAuto) return com.huhobot.penguin.qq.Intents.GROUP
+            return com.huhobot.penguin.qq.Intents.DEFAULT_GROUP
+        }
+
+    /** 群成员进退群事件是否转发到游戏。 */
+    val groupMemberEventToGame: Boolean get() = getBool("group-event.to-game", false)
+
+    /** 入群申请是否自动转发到游戏（需机器人是群管理员）。 */
+    val groupJoinRequestToGame: Boolean get() = getBool("group-event.join-request-to-game", false)
+
+    // ---- 群管理 ----
+
+    /** 群管理类命令是否需要管理员权限。 */
+    val groupApiAdminOnly: Boolean get() = getBool("group-api.admin-only", true)
+
     // ---- debug ----
     val debugLogEvents: Boolean get() = getBool("debug.log-events", false)
 
@@ -109,7 +140,10 @@ class PenguinConfig private constructor(private val raw: MutableMap<String, Any?
             "查信息", "查管理", "加管理", "删管理", "管理方式",
             "添加白名单", "删除白名单", "查白名单", "查在线", "在线服务器",
             "发信息", "发消息", "执行命令", "执行", "管理员执行",
-            "全量", "认证", "解除认证", "绑定白名单", "解绑白名单", "解除绑定"
+            "全量", "认证", "解除认证", "绑定白名单", "解绑白名单", "解除绑定",
+            "群信息", "群成员", "查成员", "禁言", "踢人",
+            "入群申请", "同意入群", "拒绝入群",
+            "群黑名单", "拉黑", "移出黑名单", "撤回", "扫码绑定"
         )
 
         private val DEFAULTS: Map<String, Any?> = buildMap {
@@ -143,6 +177,11 @@ class PenguinConfig private constructor(private val raw: MutableMap<String, Any?
             put("audit.base-url", "")
             put("audit.api-key", "")
             put("audit.model", "gpt-4o-mini")
+            put("qq.intents", 0)
+            put("qq.intents-auto", true)
+            put("group-event.to-game", false)
+            put("group-event.join-request-to-game", false)
+            put("group-api.admin-only", true)
             put("custom-commands", emptyList<Any>())
             put("debug.log-events", false)
             put("bstats.enabled", true)

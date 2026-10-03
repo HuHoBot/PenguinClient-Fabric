@@ -432,7 +432,219 @@ class CommandHandler(
         }.start()
     }
 
+    // ---- 群管理（对齐官方 OpenAPI） ----
+
+    @BotCommand("群信息", "查看本群信息与机器人状态", adminOnly = true)
+    private fun cmdGroupInfo(ctx: Ctx) {
+        if (!gateGroupApi(ctx)) return
+        runGroupApi(ctx, "查询群信息") { api ->
+            val info = api.getGroupInfo(ctx.groupId)
+            val botState = api.getBotState(ctx.groupId)
+            buildString {
+                appendLine("群名：${info.groupName ?: "未知"}")
+                appendLine("成员：${info.memberCount}/${info.maxMember}")
+                appendLine("机器人：${if (botState.joined) "已入群" else "未入群"}")
+                if (botState.mutedInGroup) appendLine("机器人当前被禁言")
+            }.trim()
+        }
+    }
+
+    @BotCommand("群成员", "查看群成员列表", adminOnly = true)
+    private fun cmdGroupMembers(ctx: Ctx) {
+        if (!gateGroupApi(ctx)) return
+        val limit = ctx.params.trim().toIntOrNull() ?: 20
+        runGroupApi(ctx, "查询群成员") { api ->
+            val members = api.listMembers(ctx.groupId, maxCount = limit.coerceIn(1, 500))
+            if (members.isEmpty()) "本群没有查到成员"
+            else members.joinToString("\n") { m ->
+                val role = when (m.memberRole) {
+                    "owner" -> "[群主]"
+                    "admin" -> "[管理]"
+                    else -> ""
+                }
+                "$role${m.username ?: m.memberOpenid}"
+            }
+        }
+    }
+
+    @BotCommand("查成员", "查询指定群成员信息", adminOnly = true)
+    private fun cmdGroupMemberInfo(ctx: Ctx) {
+        if (!gateGroupApi(ctx)) return
+        val openid = ctx.params.trim().split(Regex("\\s+")).firstOrNull().orEmpty()
+        if (openid.isEmpty()) { reply(ctx, "用法：查成员 <OpenID>"); return }
+        runGroupApi(ctx, "查询成员") { api ->
+            val m = api.getMember(ctx.groupId, openid)
+            buildString {
+                appendLine("昵称：${m.username ?: "未知"}")
+                appendLine("OpenID：$openid")
+                appendLine("角色：${m.memberRole ?: "member"}")
+                m.joinTime?.let { appendLine("入群时间：$it") }
+                m.msgCount?.let { appendLine("群消息数：$it") }
+            }.trim()
+        }
+    }
+
+    @BotCommand("禁言", "全群禁言或解除", adminOnly = true)
+    private fun cmdMuteAll(ctx: Ctx) {
+        if (!gateGroupApi(ctx)) return
+        val minutes = ctx.params.trim().toIntOrNull() ?: -1
+        if (minutes < 0) { reply(ctx, "用法：禁言 <分钟数>（0 = 解除全群禁言）"); return }
+        val seconds = (minutes * 60L).coerceIn(0L, 30L * 24 * 3600)
+        runGroupApi(ctx, "设置全群禁言") { api ->
+            api.setMuteAll(ctx.groupId, seconds.toInt())
+            if (seconds == 0L) "已解除全群禁言" else "已开启全群禁言，时长 $minutes 分钟"
+        }
+    }
+
+    @BotCommand("踢人", "把指定成员移出本群", adminOnly = true)
+    private fun cmdKick(ctx: Ctx) {
+        if (!gateGroupApi(ctx)) return
+        val openid = ctx.params.trim().split(Regex("\\s+")).firstOrNull().orEmpty()
+        if (openid.isEmpty()) { reply(ctx, "用法：踢人 <OpenID>"); return }
+        runGroupApi(ctx, "踢人") { api ->
+            api.batchRemoveMembers(ctx.groupId, listOf(openid))
+            "已将 $openid 移出本群"
+        }
+    }
+
+    @BotCommand("入群申请", "查看本群入群申请", adminOnly = true)
+    private fun cmdJoinRequests(ctx: Ctx) {
+        if (!gateGroupApi(ctx)) return
+        runGroupApi(ctx, "查询入群申请") { api ->
+            val list = api.listJoinRequests(ctx.groupId, pending = true)
+            if (list.isEmpty()) "当前没有待处理的入群申请"
+            else list.joinToString("\n") { r ->
+                buildString {
+                    append("${r.username ?: r.memberOpenid}（${r.memberOpenid}）")
+                    r.riskTips?.takeIf { it.isNotBlank() }?.let { append("  风险：$it") }
+                }
+            }
+        }
+    }
+
+    @BotCommand("同意入群", "同意指定成员入群", adminOnly = true)
+    private fun cmdApproveJoin(ctx: Ctx) {
+        if (!gateGroupApi(ctx)) return
+        val openid = ctx.params.trim().split(Regex("\\s+")).firstOrNull().orEmpty()
+        if (openid.isEmpty()) { reply(ctx, "用法：同意入群 <OpenID>"); return }
+        runGroupApi(ctx, "同意入群") { api ->
+            api.approveJoinRequest(ctx.groupId, openid)
+            "已同意 $openid 入群"
+        }
+    }
+
+    @BotCommand("拒绝入群", "拒绝指定成员入群", adminOnly = true)
+    private fun cmdRejectJoin(ctx: Ctx) {
+        if (!gateGroupApi(ctx)) return
+        val openid = ctx.params.trim().split(Regex("\\s+")).firstOrNull().orEmpty()
+        if (openid.isEmpty()) { reply(ctx, "用法：拒绝入群 <OpenID>"); return }
+        runGroupApi(ctx, "拒绝入群") { api ->
+            api.rejectJoinRequest(ctx.groupId, openid)
+            "已拒绝 $openid 入群"
+        }
+    }
+
+    @BotCommand("群黑名单", "查看本群黑名单", adminOnly = true)
+    private fun cmdGroupBlacklist(ctx: Ctx) {
+        if (!gateGroupApi(ctx)) return
+        runGroupApi(ctx, "查询群黑名单") { api ->
+            val list = api.getBlacklist(ctx.groupId)
+            if (list.isEmpty()) "本群黑名单为空" else list.joinToString("\n")
+        }
+    }
+
+    @BotCommand("拉黑", "把成员加入本群黑名单", adminOnly = true)
+    private fun cmdAddBlacklist(ctx: Ctx) {
+        if (!gateGroupApi(ctx)) return
+        val openid = ctx.params.trim().split(Regex("\\s+")).firstOrNull().orEmpty()
+        if (openid.isEmpty()) { reply(ctx, "用法：拉黑 <OpenID>"); return }
+        runGroupApi(ctx, "加入黑名单") { api ->
+            api.addBlacklist(ctx.groupId, listOf(openid))
+            "已把 $openid 加入本群黑名单"
+        }
+    }
+
+    @BotCommand("移出黑名单", "把成员移出本群黑名单", adminOnly = true)
+    private fun cmdRemoveBlacklist(ctx: Ctx) {
+        if (!gateGroupApi(ctx)) return
+        val openid = ctx.params.trim().split(Regex("\\s+")).firstOrNull().orEmpty()
+        if (openid.isEmpty()) { reply(ctx, "用法：移出黑名单 <OpenID>"); return }
+        runGroupApi(ctx, "移出黑名单") { api ->
+            api.removeBlacklist(ctx.groupId, listOf(openid))
+            "已把 $openid 移出本群黑名单"
+        }
+    }
+
+    @BotCommand("撤回", "撤回机器人最近一条消息", adminOnly = true)
+    private fun cmdRecall(ctx: Ctx) {
+        if (!gateAdmin(ctx)) return
+        if (ctx.msgId.isBlank()) { reply(ctx, "无法定位要撤回的消息"); return }
+        qqClient.recallMessage(ctx.groupId, ctx.msgId)
+    }
+
+    @BotCommand("扫码绑定", "扫码绑定 QQ 机器人凭据", adminOnly = true)
+    private fun cmdQrBind(ctx: Ctx) {
+        if (!gateAdmin(ctx)) return
+        PenguinServerMod.startQrBind { msg -> qqClient.sendGroupMessage(ctx.groupId, msg) }
+    }
+
+    /** 群管理命令的权限闸门。 */
+    private fun gateGroupApi(ctx: Ctx): Boolean {
+        if (!cfg.groupApiAdminOnly) return true
+        return gateAdmin(ctx)
+    }
+
     // ---- 分发逻辑 ----
+
+    /**
+     * 群管理类命令的统一执行壳。
+     *
+     * REST 调用是阻塞的（成员列表翻页可能上千毫秒），直接放在网关回调线程里
+     * 会卡住心跳与心跳超时判定，所以丢到后台线程，结果再异步回群。
+     */
+    private fun runGroupApi(ctx: Ctx, label: String, block: (com.huhobot.penguin.qq.GroupApi) -> String) {
+        val api = qqClient.groupApi()
+        Thread {
+            val text = try {
+                block(api)
+            } catch (e: Exception) {
+                "$label 失败：${e.message ?: e.javaClass.simpleName}"
+            }
+            qqClient.sendGroupMessage(ctx.groupId, text)
+        }.also { it.isDaemon = true; it.name = "penguin-groupapi" }.start()
+    }
+
+    /**
+     * 互动事件（面板按钮）处理。
+     *
+     * 回执已由 [PenguinServerMod] 统一发送，这里只负责执行业务。
+     */
+    fun handleInteraction(event: com.huhobot.penguin.qq.InteractionEvent) {
+        val resolved = event.data["resolved"] as? Map<*, *> ?: return
+        val buttonId = resolved["button_id"] as? String ?: return
+        val groupId = event.groupId ?: return
+        val buttonData = resolved["button_data"] as? String ?: ""
+
+        logger.info("互动事件：group=$groupId button=$buttonId data=$buttonData")
+
+        if (buttonId.startsWith("cmd:")) {
+            val command = buttonId.removePrefix("cmd:")
+            val match = findCommand(command) ?: return
+            val ctx = Ctx(
+                msgId = resolved["message_id"] as? String ?: "",
+                groupId = groupId,
+                userId = event.userId ?: "",
+                username = null,
+                memberRole = null,
+                params = buttonData
+            )
+            try {
+                commandMap[match.first]?.invoke(this, ctx)
+            } catch (e: Exception) {
+                logger.error("按钮命令 ${match.first} 执行出错", e)
+            }
+        }
+    }
 
     private fun findCommand(cleaned: String): Pair<String, String>? {
         // 按命令名长度降序匹配，避免短命令抢先

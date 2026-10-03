@@ -43,6 +43,9 @@ dependencies {
 
     // Gson for config
     include(implementation("com.google.code.gson:gson:2.10.1")!!)
+
+    // 扫码绑定：终端渲染二维码
+    include(implementation("com.google.zxing:core:3.5.3")!!)
 }
 
 tasks {

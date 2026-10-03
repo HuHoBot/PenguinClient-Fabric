@@ -67,6 +67,14 @@ object PenguinCommand {
                                 }
                         )
                 )
+                .then(
+                    literal("bind").executes { ctx ->
+                        PenguinServerMod.startQrBind { msg ->
+                            ctx.source.sendSuccess({ Component.literal("[PenguinServer] $msg") }, false)
+                        }
+                        1
+                    }
+                )
         )
     }
 }
