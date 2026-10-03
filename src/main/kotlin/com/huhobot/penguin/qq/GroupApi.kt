@@ -10,17 +10,32 @@ import java.nio.charset.StandardCharsets
 
 private val logger = LoggerFactory.getLogger("PenguinServer-Fabric/GroupApi")
 
-/** 群基本信息。 */
+/**
+ * 群基本信息。
+ *
+ * memberCount / maxMember 用可空：QQ 的 /v2/groups/{openid}/info 实测只返回
+ * group_name / group_finger_memo / group_owner_openid，压根没有成员数字段。
+ * 拿不到就返回 null 让调用方显示「未知」，不要兜成 0——那是在编数据。
+ */
 data class GroupInfo(
     val groupName: String?,
-    val memberCount: Int,
-    val maxMember: Int
+    val memberCount: Int?,
+    val maxMember: Int?
 )
 
-/** 机器人在本群的状态。 */
+/**
+ * 机器人在本群的状态。
+ *
+ * QQ 的 bot_state 不返回 joined / muted_in_group 这两个字段（实测踩过，
+ * 两者都读不到导致「机器人：未入群」永远显示）。真实字段见下方解析。
+ */
 data class GroupBotState(
-    val joined: Boolean,
-    val mutedInGroup: Boolean
+    /** 接口调通即代表机器人在群里；QQ 不提供显式字段。 */
+    val inGroup: Boolean,
+    /** recv_msg_setting：all=正常接收，group_and_at=仅@，others=不接收。null 表示未告知。 */
+    val recvSetting: String?,
+    val memberRole: String?,
+    val joinedAt: String?
 )
 
 /** 群成员。memberRole 为 owner/admin/member。 */
@@ -63,16 +78,18 @@ class GroupApi(
         val d = get("/v2/groups/$groupOpenid/info")
         return GroupInfo(
             groupName = d["group_name"] as? String,
-            memberCount = (d["member_count"] as? Number)?.toInt() ?: 0,
-            maxMember = (d["max_member"] as? Number)?.toInt() ?: 0
+            memberCount = (d["member_count"] as? Number)?.toInt(),
+            maxMember = (d["max_member"] as? Number)?.toInt()
         )
     }
 
     fun getBotState(groupOpenid: String): GroupBotState {
         val d = get("/v2/groups/$groupOpenid/bot_state")
         return GroupBotState(
-            joined = d["joined"] as? Boolean ?: false,
-            mutedInGroup = d["muted_in_group"] as? Boolean ?: false
+            inGroup = true,
+            recvSetting = d["recv_msg_setting"] as? String,
+            memberRole = d["member_role"] as? String,
+            joinedAt = d["joined_at"] as? String
         )
     }
 
