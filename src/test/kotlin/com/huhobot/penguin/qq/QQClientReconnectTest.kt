@@ -187,7 +187,8 @@ class QQClientReconnectTest {
 
     /** PenguinConfig 的构造器是 private 且 load() 依赖 FabricLoader，这里直接反射造一个。 */
     private fun testConfig(): PenguinConfig {
-        val ctor = PenguinConfig::class.java.declaredConstructors.first()
+        val ctor = PenguinConfig::class.java.declaredConstructors
+            .first { it.parameterCount == 1 && it.parameterTypes[0] == Map::class.java }
         ctor.isAccessible = true
         val flat = mutableMapOf<String, Any?>(
             "bot.app-id" to "test-app-id",

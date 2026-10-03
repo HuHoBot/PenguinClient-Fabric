@@ -189,7 +189,8 @@ class SendMessageBodyTest {
     }
 
     private fun testConfig(): PenguinConfig {
-        val ctor = PenguinConfig::class.java.declaredConstructors.first()
+        val ctor = PenguinConfig::class.java.declaredConstructors
+            .first { it.parameterCount == 1 && it.parameterTypes[0] == Map::class.java }
         ctor.isAccessible = true
         val flat = mutableMapOf<String, Any?>(
             "bot.app-id" to "test-app-id",

@@ -226,7 +226,9 @@ class GroupApiTest {
     // ---- 辅助 ----
 
     private fun testConfig(extra: Map<String, Any?> = emptyMap()): PenguinConfig {
-        val ctor = PenguinConfig::class.java.declaredConstructors.first()
+        // Kotlin 2.4 会为默认值合成额外的构造器，不能直接取 first()
+        val ctor = PenguinConfig::class.java.declaredConstructors
+            .first { it.parameterCount == 1 && it.parameterTypes[0] == Map::class.java }
         ctor.isAccessible = true
         val flat = mutableMapOf<String, Any?>(
             "bot.app-id" to "test-app-id",
