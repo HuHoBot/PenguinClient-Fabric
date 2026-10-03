@@ -1,6 +1,6 @@
 package com.huhobot.penguin.addon
 
-import com.huhobot.penguin.command.Ctx
+import com.huhobot.penguin.command.CommandHandler.Ctx
 
 /**
  * 附属插件 API —— 编译期桩。
