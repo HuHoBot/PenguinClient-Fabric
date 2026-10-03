@@ -32,3 +32,6 @@ remappedSrc/
 
 # Config (generated at runtime)
 config/
+
+# 发版时暂存的成品 jar（不进仓库）
+dist/
