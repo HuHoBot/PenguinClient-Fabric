@@ -109,7 +109,8 @@ class PenguinConfig private constructor(private val raw: MutableMap<String, Any?
             "查信息", "查管理", "加管理", "删管理", "管理方式",
             "添加白名单", "删除白名单", "查白名单", "查在线", "在线服务器",
             "发信息", "发消息", "执行命令", "执行", "管理员执行",
-            "全量", "认证", "解除认证", "绑定白名单", "解绑白名单", "解除绑定"
+            "全量", "认证", "解除认证", "绑定白名单", "解绑白名单", "解除绑定",
+            "附属插件", "重载插件", "同步面板", "刷新", "重载"
         )
 
         private val DEFAULTS: Map<String, Any?> = buildMap {

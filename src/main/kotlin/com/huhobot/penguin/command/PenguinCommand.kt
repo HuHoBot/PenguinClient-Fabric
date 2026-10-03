@@ -14,6 +14,7 @@ import net.minecraft.SharedConstants
 /**
  * 注册 /penguin 和 /huhobot 控制台/OP 命令，对齐 BDS 版 huhobot reload / huhobot info。
  * 用法：/penguin reload | /penguin info | /penguin send <消息> | /penguin sync
+ *      /penguin addons | /penguin addons reload
  *      /huhobot reload | /huhobot info | /huhobot send <消息> | /huhobot sync
  */
 object PenguinCommand {
@@ -56,6 +57,37 @@ object PenguinCommand {
                         PenguinServerMod.syncCommandPanel()
                         1
                     }
+                )
+                .then(
+                    literal("addons")
+                        .executes { ctx ->
+                            val addons = com.huhobot.penguin.addon.AddonManager.allAddons()
+                            if (addons.isEmpty()) {
+                                ctx.source.sendFeedback({ Text.literal("[PenguinServer] 当前没有已安装的附属插件") }, false)
+                            } else {
+                                ctx.source.sendFeedback(
+                                    { Text.literal("[PenguinServer] 附属插件 ${addons.size} 个：${addons.joinToString(", ") { "${it.name} v${it.version}" }}") },
+                                    false
+                                )
+                                addons.forEach { addon ->
+                                    val cmds = com.huhobot.penguin.addon.AddonManager.commandsOf(addon.name)
+                                    ctx.source.sendFeedback(
+                                        { Text.literal("  - ${addon.name} v${addon.version} by ${addon.author}｜命令 ${cmds.size} 条：${cmds.joinToString(", ") { it.command }}") },
+                                        false
+                                    )
+                                }
+                            }
+                            1
+                        }
+                        .then(
+                            literal("reload").executes { ctx ->
+                                ctx.source.sendFeedback({ Text.literal("[PenguinServer] 正在重新加载附属插件...") }, false)
+                                PenguinServerMod.reloadAddons()
+                                val count = com.huhobot.penguin.addon.AddonManager.size
+                                ctx.source.sendFeedback({ Text.literal("[PenguinServer] 附属插件重载完成，当前 $count 个") }, false)
+                                1
+                            }
+                        )
                 )
                 .then(
                     literal("send")

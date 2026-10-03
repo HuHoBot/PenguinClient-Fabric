@@ -27,6 +27,16 @@ class CommandPanelSync(
         loadState()
     }
 
+    /**
+     * 作废内存中的面板缓存，强制下次同步真的打接口。
+     *
+     * 附属插件重载后命令集合一定变了，但指纹可能与上次相同（同一批插件、
+     * 同一批命令），不清缓存会被"内容未变化"直接跳过，QQ 群里留着旧面板。
+     */
+    fun invalidateCache() {
+        cachedFingerprint = null
+    }
+
     fun syncCommands(commands: List<CommandMetadata>) {
         if (cfg.botGroups.isEmpty()) {
             logger.warn("未配置 bot.groups，跳过指令面板同步")

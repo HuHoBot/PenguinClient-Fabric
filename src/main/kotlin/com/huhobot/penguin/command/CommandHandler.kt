@@ -31,7 +31,15 @@ class CommandHandler(
         val userId: String,
         val username: String?,
         val memberRole: String?,
-        var params: String = ""
+        var params: String = "",
+        /** 回复当前消息。附属插件通过它把结果发回QQ 群。 */
+        val reply: (String) -> Unit = {},
+        /** 回复 Markdown。 */
+        val replyMarkdown: (String) -> Unit = {},
+        /** 当前用户是否为管理员。 */
+        val isAdmin: Boolean = false,
+        /** 发送者的展示名（username 缺失时回退为 openid）。 */
+        val displayName: String = username ?: userId
     )
 
     // 命令映射表：命令名 -> 方法
@@ -40,10 +48,56 @@ class CommandHandler(
     // 命令元数据列表（用于 QQ 面板同步）
     private val commandMetadata = mutableListOf<CommandMetadata>()
 
+    //附属插件命令：命令名 -> (来源插件, 处理函数)
+    private val addonCommands = mutableMapOf<String, AddonBinding>()
+
+    data class AddonBinding(
+        val source: String,
+        val metadata: CommandMetadata,
+        val handler: (Ctx) -> Unit
+    )
+
     init {
         // 反射扫描所有带 @BotCommand 注解的方法
         scanCommands()
         logger.info("已注册 ${commandMap.size} 个命令")
+    }
+
+    /**
+     * 注册一条附属插件命令。
+     *
+     * 与内置命令同名时**不覆盖**：内置命令优先，避免插件把「查在线」这类
+     * 既有命令顶掉。返回 false 表示命令名已被占用。
+     */
+    fun registerAddonCommand(
+        source: String,
+        name: String,
+        describe: String,
+        adminOnly: Boolean,
+        handler: (Ctx) -> Unit
+    ): Boolean {
+        val key = name.trim()
+        if (key.isEmpty()) {
+            logger.warn("附属插件 $source 注册了空命令名，已忽略")
+            return false
+        }
+        if (commandMap.containsKey(key)) {
+            logger.warn("附属插件 $source 试图注册已存在的命令「$key」，已忽略")
+            return false
+        }
+        if (addonCommands.containsKey(key)) {
+            val owner = addonCommands[key]!!.source
+            logger.warn("附属插件 $source 试图注册已被 $owner 占用的命令「$key」，已忽略")
+            return false
+        }
+        val metadata = CommandMetadata(key, describe, adminOnly)
+        addonCommands[key] = AddonBinding(source, metadata, handler)
+        commandMetadata.add(metadata)
+        com.huhobot.penguin.addon.AddonManager.addCommand(
+            source, com.huhobot.penguin.addon.AddonCommand(key, describe, adminOnly, source)
+        )
+        logger.info("附属插件 $source 注册命令：$key (admin=$adminOnly)")
+        return true
     }
 
     private fun scanCommands() {
@@ -432,11 +486,49 @@ class CommandHandler(
         }.start()
     }
 
+    @BotCommand("附属插件", "查看已安装的附属插件")
+    private fun cmdListAddons(ctx: Ctx) {
+        val addons = com.huhobot.penguin.addon.AddonManager.allAddons()
+        if (addons.isEmpty()) {
+            reply(ctx, "当前没有已安装的附属插件")
+            return
+        }
+        val sb = StringBuilder("已安装的附属插件 (${addons.size}):\n")
+        addons.forEach { addon ->
+            sb.appendLine("  - ${addon.name} v${addon.version} by ${addon.author}")
+            if (addon.description.isNotBlank()) {
+                sb.appendLine("    ${addon.description}")
+            }
+            val commands = com.huhobot.penguin.addon.AddonManager.commandsOf(addon.name)
+            if (commands.isNotEmpty()) {
+                sb.appendLine("    命令: ${commands.joinToString(", ") { it.command }}")
+            }
+        }
+        reply(ctx, sb.toString().trimEnd())
+    }
+
+    @BotCommand("重载插件", "重新加载附属插件", adminOnly = true)
+    private fun cmdReloadAddons(ctx: Ctx) {
+        if (!gateAdmin(ctx)) return
+        reply(ctx, "正在重新加载附属插件...")
+        Thread {
+            try {
+                Thread.sleep(200)
+                PenguinServerMod.reloadAddons()
+                Thread.sleep(500)
+                val count = com.huhobot.penguin.addon.AddonManager.size
+                qqClient.sendGroupMessage(ctx.groupId, "附属插件重载完成，当前已加载 $count 个", ctx.msgId)
+            } catch (e: Exception) {
+                qqClient.sendGroupMessage(ctx.groupId, "附属插件重载失败：${e.message}", ctx.msgId)
+            }
+        }.also { it.isDaemon = true; it.name = "penguin-addon-reload" }.start()
+    }
+
     // ---- 分发逻辑 ----
 
     private fun findCommand(cleaned: String): Pair<String, String>? {
         // 按命令名长度降序匹配，避免短命令抢先
-        val sorted = commandMap.keys.sortedByDescending { it.length }
+        val sorted = (commandMap.keys + addonCommands.keys).sortedByDescending { it.length }
         for (name in sorted) {
             if (cleaned == name || cleaned.startsWith("$name ")) {
                 val params = if (cleaned == name) "" else cleaned.removePrefix(name).trim()
@@ -460,7 +552,10 @@ class CommandHandler(
             groupId = message.groupId,
             userId = message.userId,
             username = message.username,
-            memberRole = message.memberRole
+            memberRole = message.memberRole,
+            reply = { content -> qqClient.sendGroupMessage(message.groupId, content, message.id) },
+            replyMarkdown = { content -> qqClient.sendMarkdown(message.groupId, content, message.id) },
+            isAdmin = state.isAdmin(message.groupId, message.userId, message.memberRole)
         )
 
         val cleaned = normalizeContent(message.content)
@@ -484,10 +579,22 @@ class CommandHandler(
                     reply(ctx, "此命令已被管理员关闭")
                     return
                 }
-                if (cfg.debugLogEvents)
-                    logger.info("命中命令：$name 参数=$params")
                 ctx.params = params
+                val addonBinding = addonCommands[name]
+                if (addonBinding != null) {
+                    // 附属插件命令：管理员校验交给插件自己，这里只做异常隔离
+                    if (cfg.debugLogEvents) logger.info("命中附属命令：$name (${addonBinding.source})")
+                    try {
+                        addonBinding.handler(ctx)
+                    } catch (e: Exception) {
+                        logger.error("附属命令 $name 执行出错", e)
+                        reply(ctx, "命令执行出错：${e.message}")
+                    }
+                    return
+                }
                 try {
+                    if (cfg.debugLogEvents)
+                        logger.info("命中命令：$name 参数=$params")
                     // 通过反射调用命令方法
                     val method = commandMap[name]!!
                     method.invoke(this, ctx)
