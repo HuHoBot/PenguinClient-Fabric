@@ -23,5 +23,6 @@ annotation class BotCommand(
 data class CommandMetadata(
     val name: String,
     val description: String,
-    val adminOnly: Boolean
+    val adminOnly: Boolean,
+    val addonSource: String? = null
 )

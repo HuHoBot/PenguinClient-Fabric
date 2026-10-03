@@ -14,6 +14,9 @@ import javax.net.ssl.HttpsURLConnection
 
 private val logger = LoggerFactory.getLogger("PenguinServer-Fabric/PanelSync")
 
+/** QQ 群指令面板硬上限。 */
+private const val PANEL_MAX_ITEMS = 20
+
 class CommandPanelSync(
     private val qqClient: QQClient,
     private val cfg: PenguinConfig,
@@ -27,16 +30,40 @@ class CommandPanelSync(
         loadState()
     }
 
+    /**
+     * 作废内存中的面板缓存，强制下次同步真的打接口。
+     *
+     * 附属插件重载后命令集合一定变了，但指纹可能与上次相同（同一批插件、
+     * 同一批命令），不清缓存会被「内容未变化」直接跳过，QQ 群里留着旧面板。
+     */
+    fun invalidateCache() {
+        cachedFingerprint = null
+    }
+
+    /**
+     * 面板候选命令：对齐主仓库 MenuManager 的排序策略。
+     *
+     * 内置命令优先、附属插件命令补足——纯按名称排序会让插件命令被整段挤掉
+     * （内置已 38+ 条，上限 20）。同名的插件命令直接丢弃。
+     */
+    private fun eligiblePanelCommands(commands: List<CommandMetadata>): List<CommandMetadata> {
+        val builtin = commands.filter { it.addonSource.isNullOrBlank() }
+        val addon = commands.filter { !it.addonSource.isNullOrBlank() }
+        val builtinNames = builtin.mapTo(mutableSetOf()) { it.name }
+        return (builtin + addon.filter { it.name !in builtinNames }).sortedBy { it.name }
+    }
+
     fun syncCommands(commands: List<CommandMetadata>) {
         if (cfg.botGroups.isEmpty()) {
             logger.warn("未配置 bot.groups，跳过指令面板同步")
             return
         }
 
-        val limitedCommands = commands.sortedBy { it.name }.take(20)
-        if (commands.size > 20) {
-            logger.warn("命令数量超过限制，仅同步前 20 个")
+        val candidates = eligiblePanelCommands(commands)
+        if (candidates.size > PANEL_MAX_ITEMS) {
+            logger.warn("命令数量 ${candidates.size} 超过面板上限 $PANEL_MAX_ITEMS，仅同步前 $PANEL_MAX_ITEMS 个")
         }
+        val limitedCommands = candidates.take(PANEL_MAX_ITEMS)
 
         val fingerprint = calculateFingerprint(limitedCommands)
         if (fingerprint == cachedFingerprint && cachedPanelId != null) {

@@ -56,6 +56,9 @@ object PenguinServerMod : ModInitializer {
         qqClient.onGroupMessage { msg -> commandHandler.handle(msg) }
         registerQqEventListeners(qqClient)
 
+        // 加载附属插件（此时 commandHandler 已就绪，插件注册的命令才能接上分发链）
+        com.huhobot.penguin.addon.AddonLoader.loadAll()
+
         // 服务器启动完毕后启动 QQ 网关
         ServerLifecycleEvents.SERVER_STARTED.register { srv ->
             server = srv
@@ -81,6 +84,7 @@ object PenguinServerMod : ModInitializer {
         // 服务器停止时关闭网关
         ServerLifecycleEvents.SERVER_STOPPING.register { _ ->
             com.huhobot.penguin.qr.QrLoginManager.cancel()
+            com.huhobot.penguin.addon.AddonManager.unloadAll()
             qqClient.stop()
             logger.info("$MOD_NAME QQ 网关已停止")
         }
@@ -302,6 +306,9 @@ object PenguinServerMod : ModInitializer {
 
     /** 重载配置并重启网关（对应 BDS 版的 huhobot reload）。 */
     fun reload() {
+        // 先卸载附属插件：它们注册的命令挂在旧的 commandHandler 上，
+        // 顺序反了会让插件往已废弃的 handler 里塞命令。
+        com.huhobot.penguin.addon.AddonManager.unloadAll()
         qqClient.stop()
         config = PenguinConfig.load()
         state = BotState(config)
@@ -316,6 +323,7 @@ object PenguinServerMod : ModInitializer {
 
         qqClient.onGroupMessage { msg -> commandHandler.handle(msg) }
         registerQqEventListeners(qqClient)
+        com.huhobot.penguin.addon.AddonLoader.loadAll()
         if (config.botAppId.isNotBlank() && config.botSecret.isNotBlank()) {
             qqClient.start()
             // 重载后重新同步命令面板
@@ -323,6 +331,32 @@ object PenguinServerMod : ModInitializer {
         }
         logger.info("$MOD_NAME 配置已重载")
     }
+
+    /**
+     * 只重载附属插件，不动网关与配置。
+     * 插件命令注册在 commandHandler 上，因此必须换一个新的 handler。
+     */
+    fun reloadAddons() {
+        com.huhobot.penguin.addon.AddonManager.unloadAll()
+        commandHandler = CommandHandler(config, state, qqClient, custom)
+        qqClient.onGroupMessage { msg -> commandHandler.handle(msg) }
+        com.huhobot.penguin.addon.AddonLoader.loadAll()
+        // 面板里可能有旧插件的命令残留，重建一次
+        panelSync.invalidateCache()
+        syncCommandPanel()
+    }
+
+    /** 由 AddonLoader 调用，把附属插件命令接到当前分发链上。 */
+    fun registerAddonCommand(
+        source: String,
+        name: String,
+        describe: String,
+        adminOnly: Boolean,
+        handler: (CommandHandler.Ctx) -> Unit
+    ): Boolean = commandHandler.registerAddonCommand(source, name, describe, adminOnly, handler)
+
+    /** mod 的配置目录。 */
+    fun configDir(): File = net.fabricmc.loader.api.FabricLoader.getInstance().configDir.toFile()
 
     /**
      * 同步命令面板到 QQ

@@ -75,6 +75,37 @@ object PenguinCommand {
                         1
                     }
                 )
+                .then(
+                    literal("addons")
+                        .executes { ctx ->
+                            val addons = com.huhobot.penguin.addon.AddonManager.allAddons()
+                            if (addons.isEmpty()) {
+                                ctx.source.sendSuccess({ Component.literal("[PenguinServer] 当前没有已安装的附属插件") }, false)
+                            } else {
+                                ctx.source.sendSuccess(
+                                    { Component.literal("[PenguinServer] 附属插件 ${addons.size} 个：${addons.joinToString(", ") { "${it.name} v${it.version}" }}") },
+                                    false
+                                )
+                                addons.forEach { addon ->
+                                    val cmds = com.huhobot.penguin.addon.AddonManager.commandsOf(addon.name)
+                                    ctx.source.sendSuccess(
+                                        { Component.literal("  - ${addon.name} v${addon.version} by ${addon.author}｜命令 ${cmds.size} 条：${cmds.joinToString(", ") { it.command }}") },
+                                        false
+                                    )
+                                }
+                            }
+                            1
+                        }
+                        .then(
+                            literal("reload").executes { ctx ->
+                                ctx.source.sendSuccess({ Component.literal("[PenguinServer] 正在重新加载附属插件...") }, false)
+                                PenguinServerMod.reloadAddons()
+                                val count = com.huhobot.penguin.addon.AddonManager.size
+                                ctx.source.sendSuccess({ Component.literal("[PenguinServer] 附属插件重载完成，当前 $count 个") }, false)
+                                1
+                            }
+                        )
+                )
         )
     }
 }
