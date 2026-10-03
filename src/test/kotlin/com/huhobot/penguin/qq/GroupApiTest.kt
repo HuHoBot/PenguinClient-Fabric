@@ -49,11 +49,26 @@ class GroupApiTest {
         assertEquals("GET /v2/groups/g1/info", api.lastPath)
     }
 
+    /**
+     * QQ 的 info 响应实测没有 member_count / max_member。缺失时必须返回 null，
+     * 兜成 0 会让群里显示「成员：0/0」，那是编出来的数据。
+     */
     @Test
-    fun `bot 状态解析字段`() {
+    fun `info 接口缺成员数字段时返回 null 而不是 0`() {
+        val info = groupApi().getGroupInfo("g_no_count")
+        assertEquals("无成员数群", info.groupName)
+        assertNull(info.memberCount, "缺字段时memberCount 应为 null")
+        assertNull(info.maxMember, "缺字段时 maxMember 应为 null")
+    }
+
+    @Test
+    fun `bot 状态按真实字段解析`() {
         val state = groupApi().getBotState("g1")
-        assertTrue(state.joined)
-        assertTrue(state.mutedInGroup)
+        // 接口调通即代表在群里，QQ 不提供 joined 字段
+        assertTrue(state.inGroup)
+        assertEquals("all", state.recvSetting)
+        assertEquals("admin", state.memberRole)
+        assertEquals("2026-08-15T11:47:56+08:00", state.joinedAt)
     }
 
     // ---- 禁言 ----
@@ -280,8 +295,12 @@ private class FakeGroupApi {
             }
 
             when {
-                path.endsWith("/info") -> send(ex, 200, """{"group_name":"测试群","member_count":128,"max_member":500}""")
-                path.endsWith("/bot_state") -> send(ex, 200, """{"joined":true,"muted_in_group":true}""")
+                path.endsWith("/info") -> send(ex, 200,
+                    // g_no_count 模拟真实 QQ 的 info 响应：只有群名，没有成员数字段
+                    if (full.contains("/v2/groups/g_no_count/"))
+                        """{"group_name":"无成员数群","group_finger_memo":"x"}"""
+                    else """{"group_name":"测试群","member_count":128,"max_member":500}""")
+                path.endsWith("/bot_state") -> send(ex, 200, """{"member_openid":"m1","joined_at":"2026-08-15T11:47:56+08:00","allow_proactive_msg":true,"recv_msg_setting":"all","member_role":"admin"}""")
                 full.contains("/members?") -> sendMembersPage(ex)
                 path.matches(Regex(".*/members/[^/]+")) ->
                     send(ex, 200, """{"member_openid":"u1","username":"甲","member_role":"admin","msg_count":42}""")

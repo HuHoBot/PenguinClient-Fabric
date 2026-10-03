@@ -532,11 +532,28 @@ class CommandHandler(
         runGroupApi(ctx, "查询群信息") { api ->
             val info = api.getGroupInfo(ctx.groupId)
             val state = api.getBotState(ctx.groupId)
+            val role = when (state.memberRole) {
+                "owner" -> "[群主]"
+                "admin" -> "[管理员]"
+                else -> null
+            }
             buildString {
                 appendLine("群名：${info.groupName ?: "未知"}")
-                appendLine("成员：${info.memberCount}/${info.maxMember}")
-                appendLine("机器人：${if (state.joined) "已入群" else "未入群"}")
-                if (state.mutedInGroup) appendLine("机器人当前被禁言")
+                val cur = info.memberCount
+                val max = info.maxMember
+                appendLine(
+                    "成员：" + when {
+                        cur != null && max != null -> "$cur/$max"
+                        // QQ 的 info 接口不返回成员数，只能靠 members 接口自己数，
+                        // 但那个接口要单独申请权限（err_code 40012010），这里不编数字。
+                        else -> "未知（QQ 未提供该字段）"
+                    }
+                )
+                appendLine("机器人：已入群${role?.let { " $it" } ?: ""}")
+                if (state.recvSetting != null && state.recvSetting != "all") {
+                    appendLine("注意：机器人消息接收受限（recv_msg_setting=${state.recvSetting}）")
+                }
+                state.joinedAt?.let { appendLine("入群时间：$it") }
             }.trim()
         }
     }
