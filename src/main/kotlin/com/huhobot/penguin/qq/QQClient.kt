@@ -8,6 +8,7 @@ import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 private val logger = LoggerFactory.getLogger("PenguinServer-Fabric/QQClient")
@@ -119,20 +120,39 @@ private const val TOKEN_REFRESH_LEAD = 60_000L
 private const val MAX_RECONNECT_DELAY = 30_000L
 private const val SEND_GAP_MS = 500L
 
+/** 被 QQ 判定为「接口调用超过频率限制」后额外静默的时间，避免继续给限流器加压。 */
+private const val RATE_LIMIT_COOLDOWN_MS = 60_000L
+
+/** 同一种连接失败最多每隔多久打一条日志，其余折叠成计数。 */
+private const val ERROR_LOG_INTERVAL_MS = 60_000L
+
+/** 一次连接尝试的握手宽限期，watchdog 在此期间不再插入新的连接。 */
+private const val CONNECT_GRACE_MS = 20_000L
+
 /** QQ Markdown 键盘限制：单条消息最多 5 个按钮，按钮 id/label 也有长度上限。 */
 private const val MAX_BUTTONS = 5
 private const val MAX_BUTTON_ID = 10
 private const val MAX_BUTTON_LABEL = 12
 
+/** QQ 网关会话失效类关闭码（4900~4913），需要丢弃 session 重新 Identify。 */
+private val SESSION_INVALID_CODES = 4900..4913
+
+private const val DEFAULT_TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken"
+private const val DEFAULT_API_BASE = "https://api.bot.qq.com"
+
+/** 用于日志折叠：同一类错误里 trace_id 每次都不同，归一化后才能识别为「同一条」。 */
+private val TRACE_ID_REGEX = Regex(""",?"trace_id":"[0-9a-fA-F]*"""")
+
 /**
  * QQ 开放平台 WebSocket 网关客户端，对齐 BDS 版 qqclient.js。
  * 使用 Java 标准库的 SSLSocket + 自实现 RFC6455 WebSocket 层（WsConnection）。
+ *
+ * [tokenUrl] / [apiBase] 仅为可测试性而暴露，生产环境使用默认的官方地址。
  */
 class QQClient(
     private val cfg: PenguinConfig,
-    private val tokenUrl: String = "https://bots.qq.com/app/getAppAccessToken",
-    private val apiBase: String = "https://api.bot.qq.com",
-    private val gatewayUrl: String = "$apiBase/gateway"
+    private val tokenUrl: String = DEFAULT_TOKEN_URL,
+    private val apiBase: String = DEFAULT_API_BASE
 ) {
 
     private val stopped = AtomicBoolean(true)
@@ -146,18 +166,29 @@ class QQClient(
      * 每条消息的 seq 序号。QQ 要求带msg_id 回复时 msg_seq 严格递增，
      * 否则第二次回复会被判为重复消息丢弃。
      */
-    private val msgSeq = java.util.concurrent.atomic.AtomicInteger(1)
+    private val msgSeq = AtomicInteger(1)
 
     // token 状态
-    private var accessToken: String? = null
-    private var tokenExpireAt: Long = 0
+    @Volatile private var accessToken: String? = null
+    @Volatile private var tokenExpireAt: Long = 0
     @Volatile private var tokenRefreshing = false
 
     // 会话状态
     private var sessionId: String? = null
     private var lastSeq: Int? = null
     private var firstConnect = true
-    private var reconnectAttempt = 0
+    private val reconnectAttempt = AtomicInteger(0)
+
+    // 连接闸门：同一时刻只允许一条连接尝试在飞行中，否则失败重试会指数级堆积
+    private val connecting = AtomicBoolean(false)
+    @Volatile private var lastConnectStartedAt = 0L
+    @Volatile private var rateLimitedUntil = 0L
+
+    // 连接失败日志折叠
+    private val errorLogLock = Any()
+    private var lastErrorKey: String? = null
+    private var lastErrorLoggedAt = 0L
+    private var suppressedErrorCount = 0
 
     // WebSocket 连接
     @Volatile private var wsConn: WsConnection? = null
@@ -203,6 +234,9 @@ class QQClient(
     fun start() {
         stopped.set(false)
         firstConnect = true
+        reconnectAttempt.set(0)
+        rateLimitedUntil = 0
+        connecting.set(false)
         startSendThread()
         startWatchdog()
         connectAsync(0)
@@ -216,11 +250,20 @@ class QQClient(
         heartbeatThread = null
         sendThread?.interrupt()
         sendThread = null
+        // 这里保留「先关后清」：stopped 已为 true，onSocketClose 不会再触发重连，
+        // 但仍会打出一条正常的关闭日志。
         wsConn?.close(1000, "shutdown")
         wsConn = null
+        connecting.set(false)
     }
 
-    /** 独立 watchdog，完全不依赖 MC 服务器线程或时钟。每 30s 检测一次，断线立即重连并刷新 token。 */
+    /**
+     * 独立 watchdog，完全不依赖 MC 服务器线程或时钟。每 30s 检测一次。
+     *
+     * 注意：这里只能「唤醒」连接闸门，绝不能无条件新建连接链——旧实现每 30s
+     * 无脑 connectAsync(0)，断线期间每个周期都会多留下一条永不退出的重试链，
+     * 请求速率随在线时长线性增长，最终把 QQ 接口打到频率限制。
+     */
     private fun startWatchdog() {
         watchdogThread?.interrupt()
         watchdogThread = Thread {
@@ -228,8 +271,9 @@ class QQClient(
                 while (!Thread.interrupted() && !stopped.get()) {
                     Thread.sleep(30_000L)
                     if (stopped.get()) break
-                    if (wsConn?.isConnected() != true) {
-                        if (cfg.debugLogEvents) logger.info("Watchdog：连接已断开，刷新 token 并重连…")
+                    val idle = System.currentTimeMillis() - lastConnectStartedAt > CONNECT_GRACE_MS
+                    if (wsConn?.isConnected() != true && !connecting.get() && idle) {
+                        if (cfg.debugLogEvents) logger.info("Watchdog：连接已断开，触发重连…")
                         connectAsync(0)
                     }
                 }
@@ -240,18 +284,41 @@ class QQClient(
 
     // ---- 连接流程 ----
 
+    /**
+     * 发起一次连接尝试。
+     *
+     * 通过 [connecting] 闸门保证同一时刻只有一条连接链在飞行中：任何在此期间
+     * 到来的重连请求（socket 关闭、watchdog、op9）都会被直接丢弃，而不是各自
+     * 再起一条线程。旧实现没有这道闸门，每次失败都会派生新链且从不回收。
+     */
     private fun connectAsync(delayMs: Long) {
         if (stopped.get()) return
+        if (!connecting.compareAndSet(false, true)) {
+            if (cfg.debugLogEvents) logger.info("已有连接尝试在进行中，忽略本次重连请求")
+            return
+        }
+        lastConnectStartedAt = System.currentTimeMillis()
         Thread {
-            if (delayMs > 0) Thread.sleep(delayMs)
-            if (stopped.get()) return@Thread
+            var failure: Exception? = null
             try {
-                doConnect()
-            } catch (e: Exception) {
+                // 命中频率限制时，无论调用方给的延迟多短，都必须等冷却期结束
+                val cooldown = rateLimitedUntil - System.currentTimeMillis()
+                val wait = maxOf(delayMs, cooldown)
+                if (wait > 0) Thread.sleep(wait)
                 if (!stopped.get()) {
-                    logger.error("连接失败：${e.message}")
-                    scheduleReconnect()
+                    lastConnectStartedAt = System.currentTimeMillis()
+                    doConnect()
                 }
+            } catch (e: Exception) {
+                failure = e
+            } finally {
+                // 先放开闸门再安排重试，否则下面的 scheduleReconnect 会被自己挡掉
+                connecting.set(false)
+            }
+            if (failure != null && !stopped.get()) {
+                noteRateLimited(failure)
+                logConnectFailure(failure)
+                scheduleReconnect()
             }
         }.also { it.isDaemon = true; it.name = "penguin-connect" }.start()
     }
@@ -259,18 +326,22 @@ class QQClient(
     private fun doConnect() {
         // 使用缓存的token，避免频繁刷新触发API限制
         val token = getAccessTokenSync()
-        if (cfg.debugLogEvents) logger.info("QQ 网关：$gatewayUrl")
+        if (cfg.debugLogEvents) logger.info("QQ 网关：正式环境 $apiBase")
 
-        val gwUrl = fetchGatewayUrl(token)
-        if (gwUrl.isNullOrBlank()) throw IllegalStateException("网关地址为空")
-        if (cfg.debugLogEvents) logger.info("网关地址：$gwUrl")
+        val gatewayUrl = fetchGatewayUrl(token)
+        if (gatewayUrl.isNullOrBlank()) throw IllegalStateException("网关地址为空")
+        if (cfg.debugLogEvents) logger.info("网关地址：$gatewayUrl")
 
-        reconnectAttempt = 0
-        openSocket(gwUrl, token)
+        openSocket(gatewayUrl, token)
     }
 
     private fun openSocket(url: String, token: String) {
-        wsConn?.close(1000, "reconnect")
+        // 必须先摘掉 wsConn 再关闭旧连接：否则 onSocketClose 里的
+        // `conn !== wsConn` 判定失效，会把我们自己的主动关闭当成意外掉线，
+        // 打一条 WARN 并再安排一次重连（旧版本每天因此空转上万次）。
+        val previous = wsConn
+        wsConn = null
+        previous?.close(1000, "reconnect")
 
         val conn = WsConnection(url, mapOf(
             "Authorization" to "QQBot $token",
@@ -334,10 +405,13 @@ class QQClient(
             OP_HEARTBEAT_ACK -> lastAckTime.set(System.currentTimeMillis())
             OP_INVALID_SESSION -> {
                 val d = payload["d"]
-                logger.warn("收到 Invalid Session（d=$d），重建会话")
-                if (d == true) sessionId = null
+                logger.warn("收到 Invalid Session（d=$d），丢弃会话并重新 Identify")
+                // Resume 不可靠时重新 Identify 总是安全的，直接丢弃会话
+                sessionId = null
+                firstConnect = true
+                // 关闭连接本身就会走 onSocketClose -> scheduleReconnect，
+                // 这里不能再额外排一次，否则同一个事件会排出两条重连链。
                 conn.close(1000, "invalid-session")
-                scheduleReconnect(0)
             }
             OP_RECONNECT -> {
                 logger.warn("服务端要求重连（op7）")
@@ -352,6 +426,11 @@ class QQClient(
         heartbeatThread?.interrupt()
         heartbeatThread = null
         logger.warn("网关连接断开：code=$code reason=$reason")
+        if (code in SESSION_INVALID_CODES) {
+            // 4900~4913：QQ 侧认为会话已失效，Resume 只会被再次拒绝，下次必须重新 Identify
+            sessionId = null
+            firstConnect = true
+        }
         if (!stopped.get()) scheduleReconnect()
     }
 
@@ -393,11 +472,12 @@ class QQClient(
                 val d = payload["d"] as? Map<*, *>
                 sessionId = d?.get("session_id") as? String
                 firstConnect = false
-                reconnectAttempt = 0
+                onConnectionEstablished()
                 logger.info("QQ 机器人已连接（session_id=$sessionId）")
             }
             "RESUMED" -> {
                 firstConnect = false
+                onConnectionEstablished()
                 if (cfg.debugLogEvents) logger.info("Resume 成功，会话已恢复")
             }
             "GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE" -> {
@@ -428,9 +508,9 @@ class QQClient(
                 if (cfg.debugLogEvents) logger.info("收到退群事件：${event.groupId} ${event.userId}")
                 memberLeaveListener?.invoke(event)
             }
-            "GROUP_JOIN_REQUEST" -> {
-                // 成员信息平铺在 d 顶层（member_openid / username），没有 user 子对象。
-                // 原先读 d["user"]["id"] 拿到 null 后 ?: return 会把整个事件丢掉。
+            // GROUP_JOIN_REQUEST 的成员信息是平铺在 d 顶层的（member_openid / username），
+// 没有 user 子对象。原先读 d["user"]["id"] 拿到 null 后 ?: return 会把整个事件丢掉。
+"GROUP_JOIN_REQUEST" -> {
                 val d = payload["d"] as? Map<*, *> ?: return
                 val event = GroupJoinRequest(
                     groupId = d["group_openid"] as? String ?: return,
@@ -493,7 +573,7 @@ class QQClient(
             username = author?.get("username") as? String,
             memberRole = author?.get("member_role") as? String,
             timestamp = d["timestamp"] as? String,
-            attachments = d["attachments"] as? List<Map<*, *>>
+            attachments = (d["attachments"] as? List<*>)?.mapNotNull { it as? Map<*, *> }
         )
 
         if (cfg.debugLogEvents) {
@@ -504,6 +584,24 @@ class QQClient(
     }
 
     // ---- access_token ----
+
+    /**
+     * 只有真正握手成功（READY / RESUMED）才算连上，此时清空退避计数与限流冷却。
+     *
+     * 旧实现在 doConnect() 里「拿到网关地址」就把计数清零，于是握手一直失败也
+     * 会不停把退避重置回 1 秒，指数退避形同虚设。
+     */
+    private fun onConnectionEstablished() {
+        reconnectAttempt.set(0)
+        rateLimitedUntil = 0
+        synchronized(errorLogLock) {
+            if (suppressedErrorCount > 0) {
+                logger.info("连接已恢复（此前折叠了 $suppressedErrorCount 条重复错误日志）")
+            }
+            suppressedErrorCount = 0
+            lastErrorKey = null
+        }
+    }
 
     /** 作废本地 token 缓存，下一次取用会强制向 QQ 重新申请。 */
     @Synchronized
@@ -672,7 +770,7 @@ class QQClient(
         }
         if (msgId != null) {
             bodyMap["msg_id"] = msgId
-            // 带 msg_id 回复时必须带 seq，否则连续两次回复会被 QQ 判为重复
+            // 带msg_id 回复时必须带 seq，否则连续两次回复会被 QQ 判为重复
             bodyMap["msg_seq"] = msgSeq.getAndIncrement()
         }
 
@@ -829,17 +927,59 @@ class QQClient(
 
     private fun scheduleReconnect(delay: Long? = null) {
         if (stopped.get()) return
-        val backoff = minOf(MAX_RECONNECT_DELAY, 1000L * (1L shl minOf(reconnectAttempt++, 5)))
+        val attempt = reconnectAttempt.getAndIncrement()
+        val backoff = minOf(MAX_RECONNECT_DELAY, 1000L * (1L shl minOf(attempt, 5)))
         val wait = delay ?: (backoff + (Math.random() * 500).toLong())
-        if (cfg.debugLogEvents) logger.info("${wait}ms 后重连网关…")
+        if (cfg.debugLogEvents) logger.info("${wait}ms 后重连网关（第 ${attempt + 1} 次）…")
         connectAsync(wait)
+    }
+
+    /**
+     * 命中 QQ 的「接口调用超过频率限制」后，进入固定冷却期。
+     *
+     * 指数退避的上限是 30s，但限流一旦触发，继续按 30s 敲门只会让限流器一直
+     * 处于触发状态；这里额外静默 [RATE_LIMIT_COOLDOWN_MS]，给限流窗口留出恢复时间。
+     */
+    private fun noteRateLimited(e: Exception) {
+        val msg = e.message ?: return
+        val limited = msg.contains("频率限制") || msg.contains("100017") ||
+            msg.startsWith("HTTP 429")
+        if (limited) {
+            rateLimitedUntil = System.currentTimeMillis() + RATE_LIMIT_COOLDOWN_MS
+        }
+    }
+
+    /**
+     * 连接失败日志折叠：同一种错误每 [ERROR_LOG_INTERVAL_MS] 只打一条，
+     * 其余累计成计数。旧实现每次失败都打一条 ERROR，断线期间单个日志文件
+     * 一天能涨到 250MB 以上。
+     */
+    private fun logConnectFailure(e: Exception) {
+        val raw = e.message ?: e.javaClass.simpleName
+        // trace_id 每次都不同，归一化后才能判定是不是「同一种错误」
+        val key = TRACE_ID_REGEX.replace(raw, "")
+        val now = System.currentTimeMillis()
+        var suppressed = -1
+        synchronized(errorLogLock) {
+            if (key == lastErrorKey && now - lastErrorLoggedAt < ERROR_LOG_INTERVAL_MS) {
+                suppressedErrorCount++
+            } else {
+                suppressed = suppressedErrorCount
+                suppressedErrorCount = 0
+                lastErrorKey = key
+                lastErrorLoggedAt = now
+            }
+        }
+        if (suppressed < 0) return
+        if (suppressed > 0) logger.error("连接失败：$raw（另有 $suppressed 条同类错误已折叠）")
+        else logger.error("连接失败：$raw")
     }
 
     // ---- HTTP / JSON 工具 ----
 
     private fun fetchGatewayUrl(token: String): String? {
         val resp = getJson(
-            gatewayUrl,
+            "$apiBase/gateway",
             mapOf("Authorization" to "QQBot $token", "X-Union-Appid" to cfg.botAppId)
         )
         return resp["url"] as? String
@@ -854,6 +994,11 @@ class QQClient(
         val code = conn.responseCode
         val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
             .bufferedReader(StandardCharsets.UTF_8).readText()
+        // 关键修复：GET 也必须在 401 时作废 token。
+        // /gateway 走的是这里，旧实现只在 postJson 里处理 401，于是 QQ 提前
+        // 作废 token 后，每次重连都拿同一个死 token 去换网关地址，只能等本地
+        // 7200s TTL 自然到期，期间重试链不断堆积直到被限流。
+        if (code == 401) invalidateToken()
         if (code !in 200..299) throw RuntimeException("HTTP $code：${body.take(300)}")
         return parseJson(body)
     }
@@ -870,11 +1015,8 @@ class QQClient(
         val code = conn.responseCode
         val resp = (if (code in 200..299) conn.inputStream else conn.errorStream)
             .bufferedReader(StandardCharsets.UTF_8).readText()
-        if (code == 401) {
-            // token 过期，清除缓存强制下次重新获取
-            accessToken = null
-            tokenExpireAt = 0
-        }
+        // token 过期，清除缓存强制下次重新获取
+        if (code == 401) invalidateToken()
         if (code !in 200..299) throw RuntimeException("HTTP $code：${resp.take(300)}")
         return parseJson(resp)
     }
