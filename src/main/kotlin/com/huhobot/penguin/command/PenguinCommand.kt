@@ -43,7 +43,7 @@ object PenguinCommand {
                         // 版本号从 loader 元数据取，不再硬编码（曾硬编码 1.1.4 与真实版本脱节）
                         val modVersion = net.fabricmc.loader.api.FabricLoader.getInstance()
                             .getModContainer("penguin-server-fabric")
-                            .map { it.metadata.version.friendlyString() }.orElse("unknown")
+                            .map { it.metadata.version.friendlyString }.orElse("unknown")
                         ctx.source.sendSuccess({ Component.literal("[PenguinServer] 版本 $modVersion") }, false)
                         ctx.source.sendSuccess({ Component.literal("[PenguinServer] 环境：Fabric $mcVersion 服务端") }, false)
                         ctx.source.sendSuccess({ Component.literal("[PenguinServer] 状态：$status") }, false)
