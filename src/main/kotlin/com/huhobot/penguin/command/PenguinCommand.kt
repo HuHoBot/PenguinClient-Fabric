@@ -45,7 +45,11 @@ object PenguinCommand {
                             "1.20.1"
                         }
                         val status = if (PenguinServerMod.config.botAppId.isNotBlank()) "已配置" else "未配置（请编辑 config/penguin-server.json）"
-                        ctx.source.sendFeedback({ Text.literal("[PenguinServer] 版本 1.1.4") }, false)
+                        // 版本号从 loader 元数据取，不再硬编码（曾硬编码 1.1.4 与真实版本脱节）
+                        val modVersion = net.fabricmc.loader.api.FabricLoader.getInstance()
+                            .getModContainer("penguin-server-fabric")
+                            .map { it.metadata.version.friendlyString() }.orElse("unknown")
+                        ctx.source.sendFeedback({ Text.literal("[PenguinServer] 版本 $modVersion") }, false)
                         ctx.source.sendFeedback({ Text.literal("[PenguinServer] 环境：Fabric $mcVersion 服务端") }, false)
                         ctx.source.sendFeedback({ Text.literal("[PenguinServer] 状态：$status") }, false)
                         1

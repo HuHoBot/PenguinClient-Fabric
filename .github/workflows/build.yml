@@ -44,6 +44,43 @@ jobs:
           path: build/libs/*-mc1.20.1.jar
           retention-days: 1
 
+  build-1_21_11:
+    name: Build MC 1.21.11
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: mc1.21.11
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build 1.21.11
+        run: ./gradlew build
+
+      - name: Rename jar
+        run: |
+          cd build/libs
+          for f in penguin-server-fabric-*.jar; do
+            [ "$f" = "${f%-sources.jar}" ] && mv "$f" "${f%.jar}-mc1.21.11.jar"
+          done
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jar-mc1.21.11
+          path: build/libs/*-mc1.21.11.jar
+          retention-days: 1
+
   build-26_2:
     name: Build MC 26.2
     runs-on: ubuntu-latest
@@ -84,7 +121,7 @@ jobs:
 
   release:
     name: Create Release
-    needs: [ build-1_20_1, build-26_2 ]
+    needs: [ build-1_20_1, build-1_21_11, build-26_2 ]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
@@ -99,6 +136,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: jar-mc1.20.1
+          path: artifacts
+
+      - name: Download 1.21.11 jar
+        uses: actions/download-artifact@v4
+        with:
+          name: jar-mc1.21.11
           path: artifacts
 
       - name: Download 26.2 jar
@@ -122,7 +165,8 @@ jobs:
             ## 支持版本
             | 文件 | 适用 Minecraft 版本 |
             |------|-------------------|
-            | `*-mc1.20.1.jar` | 1.20.1 ~ 1.21.x（需 Java 21+） |
+            | `*-mc1.20.1.jar` | 1.20.1 ~ 1.21.10（需 Java 21+） |
+            | `*-mc1.21.11.jar` | 1.21.11（需 Java 21+） |
             | `*-mc26.2.jar` | 26.1+（需 Java 25+） |
 
             ## 构建信息
