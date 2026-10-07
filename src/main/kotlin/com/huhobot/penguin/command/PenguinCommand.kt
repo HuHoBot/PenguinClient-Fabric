@@ -5,6 +5,7 @@ import com.mojang.brigadier.CommandDispatcher
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.context.CommandContext
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback
+import net.minecraft.server.command.CommandManager
 import net.minecraft.server.command.CommandManager.argument
 import net.minecraft.server.command.CommandManager.literal
 import net.minecraft.server.command.ServerCommandSource
@@ -29,7 +30,8 @@ object PenguinCommand {
     private fun registerCommands(dispatcher: CommandDispatcher<ServerCommandSource>, cmdName: String) {
         dispatcher.register(
             literal(cmdName)
-                .requires { it.hasPermissionLevel(4) }
+                // 1.21.11 删除了数字权限等级 API（hasPermissionLevel 会 NoSuchMethodError 崩服），改用原版等价写法，OWNERS_CHECK = 4 级
+                .requires(CommandManager.requirePermissionLevel(CommandManager.OWNERS_CHECK))
                 .then(
                     literal("reload").executes { ctx ->
                         PenguinServerMod.reload()
@@ -40,12 +42,16 @@ object PenguinCommand {
                 .then(
                     literal("info").executes { ctx ->
                         val mcVersion = try {
-                            SharedConstants.getGameVersion().name
+                            SharedConstants.getGameVersion().name()
                         } catch (e: Exception) {
                             "1.20.1"
                         }
                         val status = if (PenguinServerMod.config.botAppId.isNotBlank()) "已配置" else "未配置（请编辑 config/penguin-server.json）"
-                        ctx.source.sendFeedback({ Text.literal("[PenguinServer] 版本 1.1.4") }, false)
+                        // 版本号从 loader 元数据取，不再硬编码（曾硬编码 1.1.4 与真实版本脱节）
+                        val modVersion = net.fabricmc.loader.api.FabricLoader.getInstance()
+                            .getModContainer("penguin-server-fabric")
+                            .map { it.metadata.version.friendlyString() }.orElse("unknown")
+                        ctx.source.sendFeedback({ Text.literal("[PenguinServer] 版本 $modVersion") }, false)
                         ctx.source.sendFeedback({ Text.literal("[PenguinServer] 环境：Fabric $mcVersion 服务端") }, false)
                         ctx.source.sendFeedback({ Text.literal("[PenguinServer] 状态：$status") }, false)
                         1

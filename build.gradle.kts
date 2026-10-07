@@ -4,7 +4,7 @@ plugins {
     id("maven-publish")
 }
 
-version = "1.1.6"
+version = "1.1.7"
 group = "com.huhobot"
 
 base {
@@ -18,11 +18,11 @@ repositories {
 }
 
 dependencies {
-    // Minecraft & Fabric
-    minecraft("com.mojang:minecraft:1.20.1")
-    mappings("net.fabricmc:yarn:1.20.1+build.10:v2")
-    modImplementation("net.fabricmc:fabric-loader:0.16.9")
-    modImplementation("net.fabricmc.fabric-api:fabric-api:0.92.9+1.20.1")
+    // Minecraft & Fabric（重定目标 1.21.11：1.21.11 删除数字权限等级，权限 API 见 PenguinCommand.kt）
+    minecraft("com.mojang:minecraft:1.21.11")
+    mappings("net.fabricmc:yarn:1.21.11+build.6:v2")
+    modImplementation("net.fabricmc:fabric-loader:0.19.5")
+    modImplementation("net.fabricmc.fabric-api:fabric-api:0.141.6+1.21.11")
 
     // Fabric Language Kotlin
     modImplementation("net.fabricmc:fabric-language-kotlin:1.13.11+kotlin.2.3.21")
